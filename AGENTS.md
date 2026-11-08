@@ -1,15 +1,27 @@
 # Working agreement
 
-[Project overview](README.md) · [Progress](docs/progress.md) · [Architecture](docs/architecture.md) · [Model](docs/model.md)
+[Project overview](README.md) · [Progress](docs/progress.md) · [Architecture](docs/architecture.md) · [Model](docs/model.md) · [Data pipeline](docs/data-pipeline.md)
 
-Treat this repository as the workspace root. Use repository-relative links in Markdown and document commands relative to this root, without assuming the repository lives in Documents. The Markdown files carry the project context for sessions opened directly in this repo.
+Treat this repository as the workspace root. Use repository-relative links and document commands relative to this root.
 
-Steven is currently participating from his phone and cannot access a terminal. Run shell commands and verification on his behalf; show concise results and support participation through discussion and experiment choices. Do not require him to execute commands to proceed. Preserve intentional learning checkpoints.
+This is Steven's portfolio project. As of 2026-11-08 the working mode is **agent-built, Steven-reviewed**: the assistant implements whole, coherent slices and Steven's job is to understand, question and steer them, not to hand-type code. Every slice must still be explainable in an interview, so:
 
-This is Steven's learning and portfolio project. Read README.md and docs/progress.md before work. Implement one manageable, explained step at a time; provide exact run commands, expected behaviour and a small experiment. Pause at learning boundaries for Steven to run and discuss results. Do not complete later milestones autonomously or use subagents without his explicit request.
+- End each slice with a short plain-English walkthrough: what was built, why, how to run it, what the evidence shows, and one or two "try this" experiments.
+- Keep code readable over clever. Docstrings should say *why*, not just *what*.
+- Run commands and verification on Steven's behalf (he may be on his phone) and show concise results.
+- Ask before changing direction, scope, or anything listed under guardrails. Larger milestones (see the README roadmap) start only when Steven agrees.
 
-Keep early work local and proportionate. Separate true physical state, sensor measurements, controller decisions and applied actuator state. Local control must eventually continue without the cloud. Label illustrative parameters and unvalidated biological models explicitly. Add meaningful tests alongside behaviour.
+## Engineering rules
 
-Verify current official Azure documentation before selecting SDKs, features, deployment or pricing. Obtain explicit agreement before paid resources or charges. Never request secrets in chat, publish repositories, deploy publicly or destroy existing resources without instruction. Keep secrets out of Git.
+- Keep true physical state, sensor measurements, controller decisions and applied actuator state separate. Controllers and external systems see measurements only.
+- Local control and protection must work with no cloud or AutoLab connection.
+- Label illustrative parameters and unvalidated biological models explicitly. Make no predictive or production-readiness claims.
+- The core `algae_sim` package stays standard-library only. AutoLab code lives only in `algae_sim/autolab/`; the AutoLab repository itself is not modified from here.
+- Add meaningful tests alongside behaviour. `uv run pytest` and `uv run ruff check .` must pass before committing.
 
-Maintain concise architecture, model, decision and learning notes as the project grows. Milestones require evidence and an opportunity for Steven to understand, run and discuss them.
+## Guardrails
+
+- Verify current official Azure documentation before choosing SDKs, services, deployment or pricing. Get Steven's explicit agreement before creating any paid resource or incurring charges.
+- Never ask for secrets in chat; keep secrets out of Git.
+- Do not push, publish, deploy publicly or destroy resources without instruction.
+- Keep architecture, model, decision and progress notes concise and current.

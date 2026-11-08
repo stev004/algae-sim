@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "algae-sim"
+version = "0.2.0"
+description = "Simulated algae photobioreactor with local control and an AutoLab adapter"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Steven Matson" }]
+dependencies = []  # the reactor core is standard-library only
+
+[project.optional-dependencies]
+# AutoLab v0.5.0, pinned to the pushed commit so the adapter is reproducible.
+autolab = [
+  "autonomous-lab @ git+https://github.com/stev004/autolab@97561db9ece2f1ba04724bb4fbf3f29246fe46bd",
+]
+plot = ["matplotlib>=3.9,<4"]
+
+[dependency-groups]
+dev = ["pytest>=8.3,<9", "ruff>=0.9,<1"]
+
+[project.scripts]
+algae-sim = "algae_sim.cli:main"
+
+# AutoLab discovers third-party read-only sensors through this entry-point group.
+[project.entry-points."autonomous_lab.sensor_adapters"]
+algae_sim_od = "algae_sim.autolab.sensor:create_sensor"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["algae_sim"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

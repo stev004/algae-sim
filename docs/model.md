@@ -1,33 +1,34 @@
-# First thermal model: proposed next learning step
+# Reactor model
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Progress](progress.md)
 
-Status: the first fixed-input implementation is in `thermal_sim.py`, with checks in `tests/test_thermal_sim.py`. Ten-minute heating and cooling results are ready for discussion before adding feedback control. The longer transient and time-step experiments described below remain future learning steps.
+**Every value below is illustrative. The growth model is educational and not validated.**
 
-Treat the vessel as perfectly mixed, with a single temperature. Stored heat changes by heater input minus heat lost to the surroundings:
+## Thermal (`thermal.py`)
+
+A perfectly mixed vessel with one temperature:
 
     C × dT/dt = P × u − K × (T − Ta)
 
-- T: true vessel temperature, degrees Celsius.
-- Ta: ambient temperature, degrees Celsius.
-- C: effective heat capacity of vessel and contents, joules per kelvin.
-- P: heater power, watts (joules per second).
-- u: applied heater fraction, from 0 to 1; initially held fixed manually.
-- K: heat-transfer coefficient for the whole vessel, watts per kelvin.
-- t: simulation time, seconds.
+C = 4180 J/K (about 1 L of water), P = 100 W heater, K = 5 W/K loss to a 20 °C room, u = applied heater fraction (0–1). At full power the equilibrium is Ta + P/K = 40 °C, and the time constant C/K is 836 s. Forward Euler is used with dt = 10 s, well below the 2C/K stability limit; a test checks it against the exact solution. There's no cooling, so setpoints below room temperature can't be reached.
 
-A one-degree Celsius temperature difference equals one kelvin. The right-hand side is net power; dividing by C gives temperature change per second. If the vessel is colder than ambient, the surroundings add heat.
+## Growth (`growth.py`)
 
-Proposed illustrative values, not measurements of a real reactor: C = 4180 J/K, P = 100 W, K = 5 W/K, Ta = 20 °C and initial T = 20 °C. These omit spatial gradients, evaporation, metabolic heat and changing physical properties.
+    dX/dt = μmax · f_T(T) · f_I(I) · X · (1 − X/Xmax) − loss(T) · X
 
-For fixed input, equilibrium is T_eq = Ta + P × u / K. With the illustrative heater fully on, this is 40 °C. It is approached gradually, not reached instantly. The time constant is C/K = 836 s; after one time constant about 63.2% of the initial gap to equilibrium has closed.
+- **f_T**: cardinal temperature model with inflection (Rosso et al., 1993). It's zero at or below 8 °C and at or above 38 °C, and 1 at the 30 °C optimum.
+- **f_I**: Steele light curve. It's 1 at 150 µmol/m²/s and drops at higher light (photoinhibition).
+- **Crowding**: logistic limit Xmax = 1.5 g/L, a crude stand-in for self-shading and nutrients.
+- **Loss**: 0.005 /h basal, plus 0.05 /h per °C above 38 °C (heat stress).
+- μmax = 0.08 /h, starting biomass 0.05 g/L, batch length 36 h.
 
-The proposed first implementation uses forward Euler:
+The rough shapes are realistic for green microalgae; the numbers aren't fitted to any strain. There's no pH, CO₂, nutrient, mixing or light-path model.
 
-    T_next = T + dt × (P × u − K × (T − Ta)) / C
+## Instruments, control and energy
 
-Start with dt = 1 simulated second. For this linear model, Euler is stable when 0 < dt < 2C/K, and avoids alternating around equilibrium when dt <= C/K; accuracy still requires a sufficiently small step. We will compare with the exact constant-input solution and examine a smaller time step.
+- **Temperature sensor**: Gaussian noise (σ 0.05 °C), 0.1 °C resolution, optional calibration offset and dropout probability.
+- **OD750 sensor**: OD = 2.0 × biomass (g/L) + noise (σ 0.01). It saturates at OD 4.
+- **Controller**: switches the heater on below setpoint − 0.3 °C and off above setpoint + 0.3 °C. A missing reading turns the heater off. A reading at 39 °C or above latches a trip until the reading drops below 37 °C.
+- **Energy**: heater energy is integrated from the applied power. Light energy is 0.2 W per µmol/m²/s, an illustrative LED panel.
 
-    T(t) = T_eq + (T_initial − T_eq) × exp(−t / (C/K))
-
-Simulation time advances by dt per update, independently of how quickly the computer runs. The first model is deterministic and needs no random seed; seed handling comes with stochastic sensors or biology. Sensor, controller and actuator will be separate concepts when introduced. No biological model is implemented or validated.
+Each reactor derives independent sensor random streams from its seed, so the same configuration and seed always give identical telemetry. A test checks this.

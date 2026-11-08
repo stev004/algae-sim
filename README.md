@@ -1,47 +1,44 @@
-# Virtual Bioreactor Fleet
+# algae-sim
 
-A learning and portfolio project for Steven: build five simulated biological reactors with local temperature control, simplified educational growth, Azure telemetry, validated supervisory commands and demonstrable failure recovery. This implements closed-loop control; choosing new experiments autonomously is a future extension.
+A simulated algae photobioreactor that plugs into [AutoLab](https://github.com/stev004/autolab) as a stand-in for real lab hardware.
 
-## Current status
+The reactor runs its own local temperature control. AutoLab's optimiser proposes growth conditions (temperature setpoint and light), the reactor carries out a batch, and the result comes back through AutoLab's read-only sensor contract as identity-bound, calibrated evidence. AutoLab never touches the heater, just as it would never touch real hardware directly.
 
-Milestone 1 has started: a small standard-library thermal simulator models one true vessel temperature with a manually fixed heater setting. It now records temperature each simulated second and prints heating/cooling readings every two minutes. Eight tests cover thermal behaviour, the exact solution, history timestamps, zero duration and invalid inputs. The current checkpoint is understanding the list of readings before adding a graph. There are still no sensors, controller, external dependencies, cloud resources or dashboard.
+> All parameters are illustrative teaching values. The growth model is educational and **not validated**; nothing here predicts real algae behaviour.
 
-Run the examples with `.venv/bin/python thermal_sim.py` and the tests with `.venv/bin/python -m unittest discover -s tests -v`, from this repository root.
+## What's here
 
-Observed environment: Apple Silicon macOS, zsh, Python 3.14.6, Git 2.50.1; uv is available but not required. Visual Studio Code is installed with Microsoft's Python tooling, the repository is open as the workspace and its `.venv` interpreter is selected. Python suitability for Azure SDKs will be checked at the cloud milestone.
+| Part | What it does |
+|---|---|
+| `algae_sim/thermal.py` | Heat balance of one well-mixed vessel (heater in, losses to the room) |
+| `algae_sim/growth.py` | Educational growth model: temperature optimum, light optimum with photoinhibition, crowding, heat-stress death |
+| `algae_sim/instruments.py` | Noisy, quantised temperature and OD750 sensors with dropouts; a heater that can fail |
+| `algae_sim/control.py` | On-device hysteresis thermostat with fail-safe and over-temperature trip |
+| `algae_sim/reactor.py` | Runs a batch: sense → decide → actuate → physics; collects telemetry and energy use |
+| `algae_sim/records.py` | Run records: `run.json` and `telemetry.jsonl`, the instrument-capture format |
+| `algae_sim/autolab/sensor.py` | OD750 probe implementing AutoLab's `ReadOnlySensor`, registered as `algae_sim_od` |
+| `algae_sim/autolab/campaign.py` | Closed loop: AutoLab's Bayesian optimiser ↔ reactor ↔ sensor ↔ QC |
 
-## Open and continue this repository
+## Run it
 
-Open the `algae-sim` folder itself as the project root, rather than its parent Documents folder. Start here; all documentation links are relative to this repository and work wherever it is located.
-
-For a new development session, read the [working agreement](AGENTS.md) and [progress log](docs/progress.md). The first fixed-input thermal results are ready for discussion. Do not jump ahead to the controller or cloud.
-
-## Verify setup
-
-Run these commands from the repository root (the folder containing this README). The assistant can run and explain them on Steven's behalf when useful.
+Needs [uv](https://docs.astral.sh/uv/) and Python 3.12+. From this folder:
 
 ```sh
-source .venv/bin/activate
-python --version
-python -c 'import sys; print(sys.executable); print(sys.prefix != sys.base_prefix)'
-git status --short
+uv sync --all-extras          # installs AutoLab v0.5.0 from GitHub + matplotlib
+uv run pytest                 # 37 tests
+uv run python -m algae_sim run --setpoint 30 --light 150 --out runs/demo --plot runs/demo/batch.png
+uv run python -m algae_sim.autolab.campaign --trials 20 --seed 7
 ```
 
-Expected: Python 3.14.6 on the current machine, an executable inside algae-sim/.venv, and `True` for environment isolation. Git lists the initial untracked documentation, but not `.venv`. No initial commit has been made.
+Try: `--heater-fails-after 6` (heater dies at hour 6), `--dropout 0.2` (20% of temperature readings lost), or a setpoint of 37 °C (heat stress).
 
-To recreate the environment on a machine with Python installed: `python3 -m venv .venv`. No packages need installing. Use `deactivate` to leave the environment.
+The campaign prints each trial and the trade-off curve between growth and energy. Trial 5 has a deliberately failed heater; QC catches it from the temperature measurements and keeps it out of what the optimiser learns from.
 
-## Roadmap and checkpoints
+## Roadmap
 
-0. Confirm scope, environment and first step with Steven.
-1. One thermal model: heating, cooling, visualisation and an equilibrium check.
-2. Sensor, hysteresis controller and actuator: target and ambient changes, basic protection.
-3. Educational growth model, run records and reproducibility.
-4. One authenticated Azure device, validated ingestion and one persistent database.
-5. Validated, expiring supervisory commands, acknowledgements and telemetry confirmation.
-6. Five independent devices, durable bounded buffering, disconnection and restart recovery.
-7. Small dashboard, reproducible demonstration, measured results and portfolio documentation.
+1. ✅ Reactor simulator: thermal, growth, sensors, controller, faults, reproducible run records.
+2. ✅ AutoLab adapter: sensor entry point and closed-loop optimisation demo.
+3. ⏸ **Azure data pipeline** (side project, see [data-pipeline.md](docs/data-pipeline.md)): capture → parse → store → analyse reactor telemetry in Azure. Needs agreement on services and cost first.
+4. Later options: several reactors in parallel, a native AutoLab "culture" campaign type (AutoLab roadmap stage 6), a small dashboard.
 
-Each milestone needs meaningful evidence and Steven's opportunity to run and discuss it. Hardware, pH control, PID, optimisation and hosting the simulator in Azure are deferred decisions. No production-readiness or biological predictive claims are intended.
-
-See [architecture](docs/architecture.md), [thermal model](docs/model.md), and [decisions and progress](docs/progress.md).
+See [architecture](docs/architecture.md), [model](docs/model.md), [progress and decisions](docs/progress.md) and the [working agreement](AGENTS.md).
