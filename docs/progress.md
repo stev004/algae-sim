@@ -2,11 +2,20 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-08
+## Current handoff — 2026-11-09
 
-The reactor simulator and AutoLab adapter are built and verified: 37 tests pass and ruff is clean. The demo campaign (20 trials, seed 7, about 6 s) converges on roughly 26–29 °C and 115–155 µmol/m²/s, near the model's built-in optimum of 30 °C and 150 µmol/m²/s. QC excludes the deliberately faulty trial (heater failed, mean deviation 11.4 °C). The Azure pipeline is designed but not started.
+algae-sim now drives AutoLab's real stage-6 culture campaigns. A 20-experiment campaign through `autolab culture run` completes in about 3 s with 19 observed and 1 QC-failed; the failed batch is the injected heater fault, caught by `temperature_control` (mean deviation 10.0 °C). The best results cluster at 26–31 °C and 130–220 µmol/m²/s. All 120 OD readings are reported as simulated evidence. 46 tests pass, including an end-to-end campaign through AutoLab's CLI.
 
-Next decision for Steven: start the Azure pipeline (choose services and cost ceiling first), or extend the AutoLab side (several reactors, or a native culture campaign in AutoLab).
+Dependency note: AutoLab's stage-6 work is on its local, unpushed `stage6-culture-slice-b` branch, so `pyproject.toml` resolves AutoLab from `../autolab` (editable). Once AutoLab stage 6 is merged and pushed, switch back to a pinned git commit.
+
+Next decision for Steven: start the Azure pipeline (choose services and cost ceiling first), or the next AutoLab stage-6 slice (parallel reactors with batch proposals, mid-hold resume).
+
+## 2026-11-09 — AutoLab culture controller
+
+- **Decision:** implement AutoLab's `CultureEnvironmentController` here (as `algae-sim-reactor`), not in AutoLab, so AutoLab stays free of any particular device. The OD probe is integrated through `IntegratedCultureSensor`.
+- **Decision:** the adapter advances the simulation lazily to the clock's `now()` on every call, rather than subscribing to clock events, so the same code would work with a wall clock.
+- **Decision:** each accepted setpoint command starts a fresh batch. The seed comes from the experiment ID so it's resume-safe. Fault injection is through adapter-owned `settings` in the campaign config.
+- Reactor gained a safe state (heater and lights off) and running light-energy totals. The OD sensor can now take an external clock and any reactor lookup.
 
 ## 2026-11-08 — Refocus
 

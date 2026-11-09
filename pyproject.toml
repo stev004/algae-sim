@@ -13,10 +13,10 @@ authors = [{ name = "Steven Matson" }]
 dependencies = []  # the reactor core is standard-library only
 
 [project.optional-dependencies]
-# AutoLab v0.5.0, pinned to the pushed commit so the adapter is reproducible.
-autolab = [
-  "autonomous-lab @ git+https://github.com/stev004/autolab@97561db9ece2f1ba04724bb4fbf3f29246fe46bd",
-]
+# AutoLab with stage-6 culture support. Until that is pushed, uv resolves it from
+# the sibling checkout ../autolab (see [tool.uv.sources]); it must be on a branch
+# containing stage 6 (currently `stage6-culture-slice-b`).
+autolab = ["autonomous-lab>=0.5"]
 plot = ["matplotlib>=3.9,<4"]
 
 [dependency-groups]
@@ -28,6 +28,13 @@ algae-sim = "algae_sim.cli:main"
 # AutoLab discovers third-party read-only sensors through this entry-point group.
 [project.entry-points."autonomous_lab.sensor_adapters"]
 algae_sim_od = "algae_sim.autolab.sensor:create_sensor"
+
+# AutoLab stage 6 discovers setpoint-accepting culture controllers here.
+[project.entry-points."autonomous_lab.culture_controllers"]
+algae-sim-reactor = "algae_sim.autolab.controller:create_controller"
+
+[tool.uv.sources]
+autonomous-lab = { path = "../autolab", editable = true }
 
 [tool.hatch.metadata]
 allow-direct-references = true

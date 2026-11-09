@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from autonomous_lab.domain.protocols import QuantityRange
@@ -49,6 +50,12 @@ WAVELENGTH_NM = 750
 ADAPTER_NAME = "algae-sim-od750"
 
 
+class ReactorLookup(Protocol):
+    """Anything that can hand the sensor a reactor by its sample ID."""
+
+    def get(self, reactor_id: str) -> Reactor | None: ...
+
+
 class ReactorBench:
     """The simulated 'lab bench': reactors addressable by sample ID."""
 
@@ -67,8 +74,11 @@ class ReactorBench:
         self._reactors.pop(reactor_id, None)
 
 
-def default_calibration(sensor_id: str, *, valid_days: int = 365) -> CalibrationRecord:
-    calibrated_at = DEFAULT_START_TIME - timedelta(days=1)
+def default_calibration(
+    sensor_id: str, *, valid_days: int = 365, calibrated_at: datetime | None = None
+) -> CalibrationRecord:
+    if calibrated_at is None:
+        calibrated_at = DEFAULT_START_TIME - timedelta(days=1)
     return CalibrationRecord(
         calibration_id=uuid5(NAMESPACE_URL, f"algae-sim:{sensor_id}:calibration"),
         sensor_id=sensor_id,
@@ -87,16 +97,21 @@ class ReactorODSensor(ReadOnlySensor):
         self,
         *,
         sensor_id: str,
-        bench: ReactorBench,
+        bench: ReactorLookup,
         calibration: CalibrationRecord | None,
-        clock: Callable[[], datetime] = lambda: DEFAULT_START_TIME,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """``clock`` stamps readings with the caller's time (e.g. AutoLab's run clock).
+
+        Without one, a reading is stamped at the reactor's own simulated elapsed time.
+        """
         if not sensor_id:
             raise ValueError("sensor_id must not be empty")
         self._sensor_id = sensor_id
         self._bench = bench
         self._calibration = calibration
-        self._clock = clock
+        self._external_clock = clock
+        self._clock = clock or (lambda: DEFAULT_START_TIME)
         self._connection: SensorConnection | None = None
         self._self_test: SelfTestResult | None = None
 
@@ -193,7 +208,11 @@ class ReactorODSensor(ReadOnlySensor):
         reactor = self._bench.get(request.sample_id)
         if reactor is None:
             raise SensorCapabilityError(f"no reactor {request.sample_id!r} on the bench")
-        measured_at = DEFAULT_START_TIME + timedelta(seconds=reactor.elapsed_s)
+        measured_at = (
+            self._external_clock()
+            if self._external_clock is not None
+            else DEFAULT_START_TIME + timedelta(seconds=reactor.elapsed_s)
+        )
         check = validate_calibration(
             self._calibration,
             sensor_id=self.sensor_id,

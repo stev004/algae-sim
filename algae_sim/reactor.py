@@ -102,7 +102,11 @@ class Reactor:
         self.elapsed_s = 0.0
         self.true_temperature_c = config.start_temperature_c
         self.true_biomass_g_per_l = config.start_biomass_g_per_l
+        self.light_umol_m2_s = config.light_umol_m2_s
         self.heater_energy_wh = 0.0
+        self.light_energy_wh = 0.0
+        # Safe state: heater forced off and lights off, whatever the controller wants.
+        self.safe_state = False
         self.max_true_temperature_c = config.start_temperature_c
         self.last_measured_c: float | None = None
         self.last_command = 0.0
@@ -114,13 +118,15 @@ class Reactor:
         if fails_at is not None and self.elapsed_s >= fails_at * 3600:
             self.heater.failed = True
         self.last_measured_c = self.temperature_sensor.read(self.true_temperature_c)
-        self.last_command = self.controller.decide(self.last_measured_c)
+        decided = self.controller.decide(self.last_measured_c)
+        self.last_command = 0.0 if self.safe_state else decided
         self.last_applied = self.heater.apply(self.last_command)
+        light = 0.0 if self.safe_state else self.light_umol_m2_s
         # Growth uses the temperature at the start of the step (explicit Euler).
         self.true_biomass_g_per_l = step_biomass(
             self.true_biomass_g_per_l,
             self.true_temperature_c,
-            cfg.light_umol_m2_s,
+            light,
             cfg.growth,
             cfg.dt_s,
         )
@@ -128,8 +134,16 @@ class Reactor:
             self.true_temperature_c, self.last_applied, cfg.ambient_c, cfg.thermal, cfg.dt_s
         )
         self.heater_energy_wh += self.last_applied * cfg.thermal.heater_power_w * cfg.dt_s / 3600
+        self.light_energy_wh += LIGHT_WATTS_PER_UMOL_M2_S * light * cfg.dt_s / 3600
         self.max_true_temperature_c = max(self.max_true_temperature_c, self.true_temperature_c)
         self.elapsed_s += cfg.dt_s
+
+    def enter_safe_state(self) -> None:
+        self.safe_state = True
+
+    @property
+    def total_energy_wh(self) -> float:
+        return self.heater_energy_wh + self.light_energy_wh
 
     def read_od750(self) -> float:
         """Take one optical-density measurement of the current culture."""
@@ -144,7 +158,7 @@ class Reactor:
             temperature_setpoint_c=self.config.temperature_setpoint_c,
             heater_command=self.last_command,
             heater_applied=self.last_applied,
-            light_umol_m2_s=self.config.light_umol_m2_s,
+            light_umol_m2_s=0.0 if self.safe_state else self.light_umol_m2_s,
             controller_tripped=self.controller.tripped,
             true_temperature_c=self.true_temperature_c,
             true_biomass_g_per_l=self.true_biomass_g_per_l,
@@ -165,7 +179,7 @@ class Reactor:
             final_od750=telemetry[-1].measured_od750,
             final_true_biomass_g_per_l=self.true_biomass_g_per_l,
             heater_energy_wh=self.heater_energy_wh,
-            light_energy_wh=LIGHT_WATTS_PER_UMOL_M2_S * cfg.light_umol_m2_s * cfg.batch_hours,
+            light_energy_wh=self.light_energy_wh,
             trip_count=self.controller.trip_count,
             missing_temperature_readings=self.controller.missing_reading_count,
             max_true_temperature_c=self.max_true_temperature_c,
