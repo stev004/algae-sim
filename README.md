@@ -1,61 +1,81 @@
 # algae-sim
 
-A simulated algae photobioreactor that plugs into [AutoLab](https://github.com/stev004/autolab) as a stand-in for real lab hardware.
+[![CI](https://github.com/stev004/algae-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/stev004/algae-sim/actions/workflows/ci.yml)
 
-The reactor runs its own local temperature control. AutoLab's optimiser proposes growth conditions (temperature setpoint and light). AutoLab validates them, sends one bounded setpoint command, and holds the culture while polling telemetry and OD750 readings, then QCs and learns from the result. All of this runs through AutoLab's real stage-6 culture campaign and is recorded in its evidence database. The reactor acknowledges what it actually applied, enforces its own limits and protection, and simulates 36 hours in a fraction of a second by following AutoLab's simulated clock.
+**A simulated algae photobioreactor that behaves like lab hardware, so a closed-loop lab system can be built and tested before any hardware exists.**
 
-> All parameters are illustrative teaching values. The growth model is educational and **not validated**; nothing here predicts real algae behaviour.
+It plugs into [AutoLab](https://github.com/stev004/autolab), a closed-loop experimentation platform, through the same interfaces a real bioreactor would use:
 
-## What's here
+- AutoLab's optimiser proposes growth conditions (temperature setpoint and light).
+- AutoLab validates them and sends a bounded setpoint command to each replicate reactor.
+- The reactor's own on-device controller holds those conditions while AutoLab polls telemetry and OD750 readings.
+- AutoLab QCs every replicate, learns from the passing ones and records everything as evidence.
 
-| Part | What it does |
+AutoLab never touches the heater: the device owns its own control and protection.
+
+![AutoLab culture campaign on the simulated reactor](docs/images/campaign.png)
+
+*One campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour cultures, in seconds. **Left:** the trade-off between growth and energy that the optimiser explores. **Right:** each replicate's result; ✗ marks replicates that failed QC because of deliberately injected faults.*
+
+> All parameters are illustrative teaching values. The growth model is educational and **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
+
+## Quick start
+
+Needs [uv](https://docs.astral.sh/uv/). uv fetches Python 3.12 and a pinned AutoLab commit itself.
+
+```sh
+git clone https://github.com/stev004/algae-sim.git && cd algae-sim
+./scripts/demo.sh            # full AutoLab culture campaign → runs/demo/campaign.png
+uv run pytest                # tests, including an end-to-end campaign
+```
+
+One reactor batch on its own, with a plot:
+
+```sh
+uv run python -m algae_sim run --setpoint 30 --light 150 --plot runs/batch.png
+uv run python -m algae_sim run --heater-fails-after 6 --plot runs/heater-fail.png
+```
+
+## What it demonstrates
+
+| Idea | Where |
 |---|---|
-| `algae_sim/thermal.py` | Heat balance of one well-mixed vessel (heater in, losses to the room) |
-| `algae_sim/growth.py` | Educational growth model: temperature optimum, light optimum with photoinhibition, crowding, heat-stress death |
-| `algae_sim/instruments.py` | Noisy, quantised temperature and OD750 sensors with dropouts; a heater that can fail |
-| `algae_sim/control.py` | On-device hysteresis thermostat with fail-safe and over-temperature trip |
-| `algae_sim/reactor.py` | Runs a batch: sense → decide → actuate → physics; collects telemetry and energy use |
-| `algae_sim/records.py` | Run records: `run.json` and `telemetry.jsonl`, the instrument-capture format |
-| `algae_sim/autolab/sensor.py` | OD750 probe implementing AutoLab's `ReadOnlySensor`, registered as `algae_sim_od` |
-| `algae_sim/autolab/controller.py` | **The device plug-in AutoLab drives**: an `algae-sim-reactor` culture controller (setpoints in, acknowledgements, telemetry, safe state, integrated OD750 probe out) |
-| `algae_sim/autolab/campaign.py` | Earlier lightweight loop (no database), kept as a quick demo of AutoLab's optimiser |
-| `configs/` | Culture campaign and installation policy for running AutoLab against this reactor |
+| **True state, measurement, decision and actuation kept separate.** Controllers and AutoLab only ever see noisy, quantised sensor readings | `reactor.py`, `instruments.py` |
+| **The device owns safety.** An on-board thermostat with a fail-safe on lost readings and a latching over-temperature trip; works with AutoLab disconnected | `control.py` |
+| **A commandable-device adapter.** Re-checks its own limits, acknowledges the values it actually applied, reports only attested telemetry, honours safe state, tracks the command it holds | `autolab/controller.py` |
+| **A read-only instrument adapter.** OD750 probe with open, self-test and calibration checks, and identity-bound evidence | `autolab/sensor.py` |
+| **Simulated time.** Follows AutoLab's clock, so a 36-hour hold runs in milliseconds; AutoLab refuses a skipping clock unless the device declares itself simulated | `autolab/controller.py` |
+| **Fault injection to prove QC.** Per-replicate heater failures and culture crashes. AutoLab's per-replicate QC and its 2-of-3 replicate rule catch them | `configs/culture-algae-sim.yaml` |
+| **Reproducibility.** Seeded instruments; each culture's seed comes from its experiment and reactor IDs | `reactor.py`, `autolab/controller.py` |
 
-## Run it
+The injected faults in the demo config:
 
-Needs [uv](https://docs.astral.sh/uv/), Python 3.12+, and the local AutoLab repository. Stage 6 isn't pushed to GitHub yet, so `pyproject.toml` pins AutoLab to commit `44e550e` (local `main`, stage 6 complete). From this folder:
-
-```sh
-uv sync --all-extras          # installs pinned AutoLab + matplotlib
-uv run pytest                 # 49 tests, including a full AutoLab culture campaign
-uv run python -m algae_sim run --setpoint 30 --light 150 --out runs/demo --plot runs/demo/batch.png
-```
-
-A full AutoLab culture campaign: 20 experiments × 3 replicate reactors = 60 simulated 36 h cultures, about 11 s.
-
-```sh
-uv run autolab init --database runs/autolab.sqlite3
-uv run autolab culture create configs/culture-algae-sim.yaml --database runs/autolab.sqlite3 --policy configs/culture-policy.yaml --optimizer-root runs/optimizer
-uv run autolab culture run <campaign-id> --database runs/autolab.sqlite3 --policy configs/culture-policy.yaml --optimizer-root runs/optimizer --artifact-root runs/artifacts
-uv run autolab culture report <campaign-id> --database runs/autolab.sqlite3 --policy configs/culture-policy.yaml
-```
-
-Try: `--heater-fails-after 6` (heater dies at hour 6), `--dropout 0.2` (20% of temperature readings lost), or a setpoint of 37 °C (heat stress).
-
-The campaign config injects faults through the controller's `settings`, so you can watch AutoLab's QC and its replicate rule (at least 2 of 3 replicates must pass) at work:
-
-| Experiment | Injected fault | AutoLab's verdict |
+| Experiment | Fault | AutoLab's verdict |
 |---|---|---|
-| 5 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control` (10 °C off target); 2 of 3 pass, so the experiment counts |
-| 9 | reactor-3's culture crashes at hour 12 | The contamination screen `growth_plausible` flags the OD drops; 2 of 3 pass |
+| 5 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control`; 2 of 3 pass, so the experiment counts |
+| 9 | reactor-3's culture crashes at hour 12 | Contamination screen `growth_plausible` flags the OD drops; 2 of 3 pass |
 | 14 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
+
+## Layout
+
+| Path | What it does |
+|---|---|
+| `algae_sim/thermal.py` | Heat balance of one well-mixed vessel |
+| `algae_sim/growth.py` | Educational growth model: temperature and light optima, photoinhibition, crowding, heat-stress death |
+| `algae_sim/instruments.py` | Noisy, quantised temperature and OD750 sensors with dropouts; a heater that can fail |
+| `algae_sim/control.py` | Hysteresis thermostat with fail-safe and over-temperature trip |
+| `algae_sim/reactor.py` | One step: sense → decide → actuate → physics; telemetry, energy, safe state, fault injection |
+| `algae_sim/records.py` | `run.json` and `telemetry.jsonl`, the instrument-capture format |
+| `algae_sim/autolab/` | AutoLab adapters (`controller.py`, `sensor.py`), campaign chart, and an earlier database-free optimiser loop (`campaign.py`) |
+| `configs/` | Culture campaign and installation policy |
+| `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
 
 ## Roadmap
 
 1. ✅ Reactor simulator: thermal, growth, sensors, controller, faults, reproducible run records.
-2. ✅ AutoLab adapter: sensor entry point and closed-loop optimisation demo.
-3. ✅ AutoLab stage-6 controller: full culture campaigns (validation, commands, telemetry, QC, evidence ledger) against this reactor.
-4. ⏸ **Azure data pipeline** (side project, see [data-pipeline.md](docs/data-pipeline.md)): capture → parse → store → analyse reactor telemetry in Azure. Needs agreement on services and cost first.
-5. Later options: a simulated device that outlives the AutoLab process (persisted state), so mid-hold resume can be exercised for real; a small dashboard.
+2. ✅ AutoLab read-only sensor adapter and optimiser loop.
+3. ✅ AutoLab stage-6 culture controller: replicates, telemetry, QC, contamination screens, evidence ledger.
+4. 🔨 **The reactor as its own device process:** a long-running local service AutoLab talks to over the network, so the device outlives AutoLab and an interrupted culture can be resumed.
+5. ⏸ Azure data pipeline: capture → parse → store → analyse device telemetry ([plan](docs/data-pipeline.md)).
 
-See [architecture](docs/architecture.md), [model](docs/model.md), [progress and decisions](docs/progress.md) and the [working agreement](AGENTS.md).
+Working agreement for contributors and AI assistants: [AGENTS.md](AGENTS.md).

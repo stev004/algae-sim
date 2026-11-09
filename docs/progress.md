@@ -2,11 +2,17 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-09 (later)
+## Current handoff — 2026-11-09 (evening)
 
-The adapter is updated to AutoLab's completed stage 6 (local `main` 44e550e, pinned). A 20-experiment campaign with 3 replicate reactors each (60 cultures) runs in about 11 s: 19 observed, 1 QC-failed. All three injected scenarios behave as designed: a single-replicate heater fault (exp 5) and a culture crash caught by the contamination screen (exp 9) each fail only their replicate, while a double heater fault (exp 14) fails the experiment under the 2-of-3 rule. 49 tests pass.
+Shareable: AutoLab `main` (stage 6) is pushed to GitHub and its CI passes. algae-sim pins AutoLab to that pushed commit (`44e550e`), has its own CI (lint, tests, a full demo campaign), a one-command `scripts/demo.sh` and a visitor-facing README with the campaign chart. The algae-sim GitHub repository is private; making it public is Steven's call.
 
-Next decision for Steven: the Azure data pipeline, or a persistent simulated device so AutoLab's mid-hold resume can be shown succeeding.
+In progress: the reactor as its own long-running device process (roadmap item 4).
+
+## 2026-11-09 — Made shareable
+
+- **Decision:** pin AutoLab by exact GitHub commit, never by local path, so anyone can clone and run it, and parallel AutoLab work can't break it.
+- Added CI, `scripts/demo.sh`, `algae_sim.autolab.plot_campaign` (charts straight from AutoLab's evidence database) and README images.
+- Note: campaign numbers differ slightly between separate campaigns because AutoLab gives each campaign new IDs and culture seeds come from experiment IDs. A rerun or resume of the *same* campaign is identical.
 
 ## 2026-11-09 — Stage-6 completion update
 

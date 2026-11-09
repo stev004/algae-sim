@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install (reactor core + pinned AutoLab + plotting)
+        run: uv sync --all-extras --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Test (includes a full AutoLab culture campaign)
+        run: uv run pytest -q
+      - name: Demo campaign smoke run
+        run: |
+          uv run autolab init --database ci.sqlite3
+          CID=$(uv run autolab culture create configs/culture-algae-sim.yaml --database ci.sqlite3 --policy configs/culture-policy.yaml --optimizer-root ci-optimizer --id-only)
+          uv run autolab culture run "$CID" --database ci.sqlite3 --policy configs/culture-policy.yaml --optimizer-root ci-optimizer --artifact-root ci-artifacts --quiet

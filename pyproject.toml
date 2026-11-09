@@ -13,10 +13,8 @@ authors = [{ name = "Steven Matson" }]
 dependencies = []  # the reactor core is standard-library only
 
 [project.optional-dependencies]
-# AutoLab with stage-6 culture support, pinned to commit 44e550e (local `main`,
-# stage 6 complete) of the local AutoLab repository. It is pinned rather
-# than editable so ongoing AutoLab work cannot change this project underneath it.
-# Switch to the GitHub URL + commit once stage 6 is pushed.
+# AutoLab with stage-6 culture support, pinned to an exact pushed commit (see
+# [tool.uv.sources]) so ongoing AutoLab work cannot change this project underneath it.
 autolab = ["autonomous-lab>=0.5"]
 plot = ["matplotlib>=3.9,<4"]
 
@@ -35,7 +33,7 @@ algae_sim_od = "algae_sim.autolab.sensor:create_sensor"
 algae-sim-reactor = "algae_sim.autolab.controller:create_controller"
 
 [tool.uv.sources]
-autonomous-lab = { git = "file:///Users/stevenmatson/Documents/autolab", rev = "44e550e15dc18bd721b578131ceebf39f62980b0" }
+autonomous-lab = { git = "https://github.com/stev004/autolab", rev = "44e550e15dc18bd721b578131ceebf39f62980b0" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
