@@ -42,7 +42,7 @@ def bench_with_reactor(hours=6.0):
 
 def make_sensor(bench, calibration="default"):
     cal = default_calibration("od-1") if calibration == "default" else calibration
-    return ReactorODSensor(sensor_id="od-1", bench=bench, calibration=cal)
+    return ReactorODSensor(sensor_id="od-1", source=bench, calibration=cal)
 
 
 def test_discovered_through_autolab_entry_point():

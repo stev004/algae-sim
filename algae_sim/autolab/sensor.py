@@ -9,9 +9,10 @@ ask real hardware. Evidence is marked ``is_mock=True`` because no hardware ran.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from autonomous_lab.domain.protocols import QuantityRange
@@ -50,10 +51,24 @@ WAVELENGTH_NM = 750
 ADAPTER_NAME = "algae-sim-od750"
 
 
-class ReactorLookup(Protocol):
-    """Anything that can hand the sensor a reactor by its sample ID."""
+@dataclass(frozen=True, slots=True)
+class OdSample:
+    """One OD750 reading as the instrument reports it, stamped with the device's time."""
 
-    def get(self, reactor_id: str) -> Reactor | None: ...
+    od750: float
+    saturated: bool
+    measured_at: datetime
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class OdSource(Protocol):
+    """Where the probe's readings come from: an in-process reactor or a remote device.
+
+    Returns None if there is no culture in that reactor. May raise a ``SensorError``
+    (e.g. ``SensorConnectionError`` when a remote device is unreachable).
+    """
+
+    def sample_od(self, reactor_id: str) -> OdSample | None: ...
 
 
 class ReactorBench:
@@ -72,6 +87,18 @@ class ReactorBench:
 
     def remove(self, reactor_id: str) -> None:
         self._reactors.pop(reactor_id, None)
+
+    def sample_od(self, reactor_id: str) -> OdSample | None:
+        reactor = self._reactors.get(reactor_id)
+        if reactor is None:
+            return None
+        od = reactor.read_od750()
+        return OdSample(
+            od750=od,
+            saturated=od >= reactor.od_sensor.max_od,
+            measured_at=DEFAULT_START_TIME + timedelta(seconds=reactor.elapsed_s),
+            metadata={"reactor_elapsed_s": reactor.elapsed_s},
+        )
 
 
 def default_calibration(
@@ -97,21 +124,19 @@ class ReactorODSensor(ReadOnlySensor):
         self,
         *,
         sensor_id: str,
-        bench: ReactorLookup,
+        source: OdSource,
         calibration: CalibrationRecord | None,
         clock: Callable[[], datetime] | None = None,
+        transport: str = "in-process-simulation",
     ) -> None:
-        """``clock`` stamps readings with the caller's time (e.g. AutoLab's run clock).
-
-        Without one, a reading is stamped at the reactor's own simulated elapsed time.
-        """
+        """Readings are stamped by ``source``; ``clock`` only stamps connection events."""
         if not sensor_id:
             raise ValueError("sensor_id must not be empty")
         self._sensor_id = sensor_id
-        self._bench = bench
+        self._source = source
         self._calibration = calibration
-        self._external_clock = clock
         self._clock = clock or (lambda: DEFAULT_START_TIME)
+        self._transport = transport
         self._connection: SensorConnection | None = None
         self._self_test: SelfTestResult | None = None
 
@@ -129,7 +154,7 @@ class ReactorODSensor(ReadOnlySensor):
                 sensor_id=self.sensor_id,
                 status=ConnectionStatus.OPEN,
                 changed_at=self._clock(),
-                transport_metadata={"transport": "in-process-simulation", "is_mock": True},
+                transport_metadata={"transport": self._transport, "is_mock": True},
             )
             self._self_test = None
         return self._connection
@@ -205,14 +230,10 @@ class ReactorODSensor(ReadOnlySensor):
         connection = self._require_ready()
         manifest = await self.capability_manifest()
         self._validate_request(request)
-        reactor = self._bench.get(request.sample_id)
-        if reactor is None:
-            raise SensorCapabilityError(f"no reactor {request.sample_id!r} on the bench")
-        measured_at = (
-            self._external_clock()
-            if self._external_clock is not None
-            else DEFAULT_START_TIME + timedelta(seconds=reactor.elapsed_s)
-        )
+        sample = self._source.sample_od(request.sample_id)
+        if sample is None:
+            raise SensorCapabilityError(f"no culture in reactor {request.sample_id!r}")
+        measured_at = sample.measured_at
         check = validate_calibration(
             self._calibration,
             sensor_id=self.sensor_id,
@@ -222,8 +243,6 @@ class ReactorODSensor(ReadOnlySensor):
         if not check.valid:
             issue = check.issues[0]
             raise SensorCalibrationError(issue.code, issue.message)
-        od = reactor.read_od750()
-        saturated = od >= reactor.od_sensor.max_od
         assert self._self_test is not None
         evidence = SensorSourceEvidence(
             sensor_id=self.sensor_id,
@@ -237,7 +256,7 @@ class ReactorODSensor(ReadOnlySensor):
             calibration_sha256=check.calibration_sha256,
             is_mock=True,
             acquired_at=measured_at,
-            metadata={"simulated": True, "reactor_elapsed_s": reactor.elapsed_s},
+            metadata={"simulated": True, **sample.metadata},
         )
         return RawSensorMeasurement(
             request_id=request.request_id,
@@ -245,12 +264,12 @@ class ReactorODSensor(ReadOnlySensor):
             run_id=request.run_id,
             sample_id=request.sample_id,
             measurement_type=MEASUREMENT_TYPE,
-            raw_value=Decimal(str(od)),
+            raw_value=Decimal(str(sample.od750)),
             unit=UNIT,
             wavelength=request.wavelength,
             measured_at=measured_at,
             source_evidence=evidence,
-            metadata={"saturated": saturated},
+            metadata={"saturated": sample.saturated},
         )
 
     def _require_ready(self) -> SensorConnection:
@@ -294,6 +313,6 @@ def create_sensor(*, sensor_id: str, settings: Mapping[str, object]) -> ReactorO
     del settings  # no adapter-owned settings yet
     return ReactorODSensor(
         sensor_id=sensor_id,
-        bench=DEFAULT_BENCH,
+        source=DEFAULT_BENCH,
         calibration=default_calibration(sensor_id),
     )

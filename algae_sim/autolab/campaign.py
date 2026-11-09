@@ -118,7 +118,7 @@ async def run_campaign(
     )
     bench = ReactorBench()
     sensor = ReactorODSensor(
-        sensor_id=SENSOR_ID, bench=bench, calibration=default_calibration(SENSOR_ID)
+        sensor_id=SENSOR_ID, source=bench, calibration=default_calibration(SENSOR_ID)
     )
     await sensor.open()
     if (await sensor.self_test()).status.value != "passed":
