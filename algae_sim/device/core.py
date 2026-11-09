@@ -311,7 +311,9 @@ class DeviceCore:
                 "setpoint_c": batch.applied_temperature_c,
                 "light_umol_m2_s": batch.applied_light,
                 "hold_elapsed_h": round(r.elapsed_s / 3600, 3),
-                "measured_temperature_c": r.last_measured_c,
+                "measured_temperature_c": (
+                    None if r.last_measured_c is None else round(r.last_measured_c, 1)
+                ),
             }
         return {"device_time": self.now.isoformat(), "reactors": reactors}
 

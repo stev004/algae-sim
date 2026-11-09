@@ -8,7 +8,8 @@ ask real hardware. Evidence is marked ``is_mock=True`` because no hardware ran.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import inspect
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -64,11 +65,14 @@ class OdSample:
 class OdSource(Protocol):
     """Where the probe's readings come from: an in-process reactor or a remote device.
 
-    Returns None if there is no culture in that reactor. May raise a ``SensorError``
-    (e.g. ``SensorConnectionError`` when a remote device is unreachable).
+    Returns None if there is no culture in that reactor; a remote source may return an
+    awaitable instead. May raise a ``SensorError`` (e.g. ``SensorConnectionError``
+    when a remote device is unreachable).
     """
 
-    def sample_od(self, reactor_id: str) -> OdSample | None: ...
+    def sample_od(
+        self, reactor_id: str
+    ) -> OdSample | Awaitable[OdSample | None] | None: ...
 
 
 class ReactorBench:
@@ -231,6 +235,8 @@ class ReactorODSensor(ReadOnlySensor):
         manifest = await self.capability_manifest()
         self._validate_request(request)
         sample = self._source.sample_od(request.sample_id)
+        if inspect.isawaitable(sample):
+            sample = await sample
         if sample is None:
             raise SensorCapabilityError(f"no culture in reactor {request.sample_id!r}")
         measured_at = sample.measured_at

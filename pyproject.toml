@@ -31,6 +31,7 @@ algae_sim_od = "algae_sim.autolab.sensor:create_sensor"
 # AutoLab stage 6 discovers setpoint-accepting culture controllers here.
 [project.entry-points."autonomous_lab.culture_controllers"]
 algae-sim-reactor = "algae_sim.autolab.controller:create_controller"
+algae-sim-device = "algae_sim.autolab.remote:create_remote_controller"
 
 [tool.uv.sources]
 autonomous-lab = { git = "https://github.com/stev004/autolab", rev = "44e550e15dc18bd721b578131ceebf39f62980b0" }

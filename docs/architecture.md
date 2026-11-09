@@ -44,3 +44,30 @@ The adapter owns the device:
 **Clock coupling.** Before answering any call, the adapter steps the reactor forward to AutoLab's `clock.now()`. With `execution.clock: simulated`, AutoLab's `SteppedClock` jumps ahead, so a 36-hour hold costs a fraction of a second. The manifest declares `is_simulated: true`, which AutoLab requires before it will use a simulated clock. The batch seed comes from the experiment ID, so a resumed campaign recreates the same culture.
 
 `campaign.py` is the earlier, database-free loop. It's kept as a quick demo of the optimiser alone.
+
+## The reactor as a separate device (roadmap item 4)
+
+```text
+AutoLab process                           device process (python -m algae_sim device serve)
+  culture runner                            DeviceService: clock, persistence, HTTP/JSON
+   └ algae-sim-device adapter ──HTTP──▶       └ DeviceCore firmware: reactors, limits,
+     (autolab/remote.py)                         idempotent commands, safe state, OD probe
+```
+
+The same `DeviceCore` firmware runs in-process (`algae-sim-reactor`) or behind the service (`algae-sim-device`), so both adapters behave identically.
+
+**Time.** The device has its own clock.
+- *Lockstep* (`--speed 0`): the adapter advances the device to AutoLab's simulated clock; fast and deterministic, used by tests.
+- *Paced* (`--speed N`): the device runs at N × real time and can't be pushed. If AutoLab's clock is ahead, the adapter waits for the device; if the device is ahead, the adapter moves AutoLab's simulated clock forward to match.
+
+Every reading and telemetry sample is stamped with device time.
+
+**Failures.**
+- *Unreachable* (connection refused): nothing was sent, so the error is retry-safe.
+- *No reply* after sending: the adapter resends the same `command_id`. The device returns its original acknowledgement without applying the command again.
+- *Persistent silence*: the adapter raises an ambiguous `ControllerError`, which AutoLab never retries and handles by going to safe state.
+- An unconfirmed safe state is always reported as ambiguous.
+
+**Persistence and resume.** The service pickles its firmware state after every command and about once a second, written atomically. Restarting the service resumes from the saved state. If AutoLab crashes, the device keeps holding. On restart, AutoLab reads `active_command_id` from each reactor, confirms the hold, and continues the schedule. Readings whose windows passed during the outage are recorded as missing, and QC judges whether enough of the hold was observed.
+
+**Cost of realism.** Over HTTP an experiment takes about 1 s in lockstep, against about 0.5 s in-process. At high paced speeds, a few real seconds of AutoLab restart become hours of culture time, so the resume demo relaxes telemetry coverage to 75% and reports the gap it actually saw. The service listens on 127.0.0.1 with no authentication: it's for one local machine.

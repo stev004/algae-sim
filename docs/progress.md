@@ -2,11 +2,20 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-09 (evening)
+## Current handoff — 2026-11-09 (night)
 
-Shareable: AutoLab `main` (stage 6) is pushed to GitHub and its CI passes. algae-sim pins AutoLab to that pushed commit (`44e550e`), has its own CI (lint, tests, a full demo campaign), a one-command `scripts/demo.sh` and a visitor-facing README with the campaign chart. The algae-sim GitHub repository is private; making it public is Steven's call.
+Roadmap item 4 is done: the reactor bank runs as its own device service (`python -m algae_sim device serve`) and AutoLab drives it over HTTP through the `algae-sim-device` adapter. `scripts/resume_demo.sh` SIGKILLs AutoLab 13 h into a 36 h hold; the device keeps all three reactors near 30 °C, and AutoLab restarts, confirms each hold and completes the experiment with all 18 OD readings. Outage length decides the QC verdict, not the resume: an 8.4 h unwatched gap (`OUTAGE_S=30`) still passed (1 of 6 readings missed, coverage just above 75%), while a 16.5 h gap (`OUTAGE_S=60`) failed `readings_complete` and `telemetry_coverage` on every replicate. 61 tests pass, including a crash-and-resume campaign in lockstep mode.
 
-In progress: the reactor as its own long-running device process (roadmap item 4).
+Next: the Azure data pipeline (needs service and cost choices first), or polish such as a live device dashboard.
+
+## 2026-11-09 — The reactor as a device
+
+- **Decision:** extract the firmware (`DeviceCore`, stdlib only) and host it either in-process or in an HTTP service, so the two adapters can't drift apart.
+- **Decision:** stdlib `http.server` + JSON, keep-alive, localhost only. No framework, no new dependencies.
+- **Decision:** the device owns its clock. Lockstep mode for tests; paced mode for realism. The adapter reconciles AutoLab's simulated clock with the device clock in both directions.
+- **Decision:** network failures are classified (unreachable / no reply / refused); lost replies are resolved by idempotent resend; persistent silence is ambiguous.
+- **Decision:** injected faults are device settings (`configs/device-settings.json`), since they belong to the hardware, not to the campaign.
+- **Finding:** at 7200× and 1800× the resume demo failed QC. AutoLab's restart (4–20 real seconds) was 4–10 simulated hours of unwatched culture, and sequential setpoint commands skewed reactor start times beyond the 10-minute reading window. The demo now runs at 900× with 75% telemetry coverage and prints the observed gap.
 
 ## 2026-11-09 — Made shareable
 

@@ -29,6 +29,22 @@ git clone https://github.com/stev004/algae-sim.git && cd algae-sim
 uv run pytest                # tests, including an end-to-end campaign
 ```
 
+**The reactor as a real device.** Run the reactor bank as its own long-running service. Then crash AutoLab partway through a culture and watch it resume:
+
+```sh
+./scripts/resume_demo.sh              # SIGKILL AutoLab 13 h into a 36 h hold, restart, resume
+OUTAGE_S=60 ./scripts/resume_demo.sh  # a long outage: AutoLab resumes, but QC rejects the run
+```
+
+Or by hand:
+
+```sh
+uv run python -m algae_sim device serve --speed 900 --settings configs/device-settings.json --state runs/device
+uv run python -m algae_sim device status          # in another terminal
+```
+
+then point a campaign at it with `configs/culture-device.yaml`.
+
 One reactor batch on its own, with a plot:
 
 ```sh
@@ -45,6 +61,8 @@ uv run python -m algae_sim run --heater-fails-after 6 --plot runs/heater-fail.pn
 | **A commandable-device adapter.** Re-checks its own limits, acknowledges the values it actually applied, reports only attested telemetry, honours safe state, tracks the command it holds | `autolab/controller.py` |
 | **A read-only instrument adapter.** OD750 probe with open, self-test and calibration checks, and identity-bound evidence | `autolab/sensor.py` |
 | **Simulated time.** Follows AutoLab's clock, so a 36-hour hold runs in milliseconds; AutoLab refuses a skipping clock unless the device declares itself simulated | `autolab/controller.py` |
+| **A device that outlives its client.** The reactor bank runs as its own HTTP service with persisted state. It keeps holding while AutoLab is down, and AutoLab resumes the hold after a crash | `device/service.py`, `scripts/resume_demo.sh` |
+| **Honest failure semantics on a network.** "Never reached the device" is reported differently from "sent, no reply". Lost replies are resolved by resending the same command ID, which the device recognises and doesn't apply twice. Persistent silence is reported to AutoLab as ambiguous | `autolab/remote.py`, `device/core.py` |
 | **Fault injection to prove QC.** Per-replicate heater failures and culture crashes. AutoLab's per-replicate QC and its 2-of-3 replicate rule catch them | `configs/culture-algae-sim.yaml` |
 | **Reproducibility.** Seeded instruments; each culture's seed comes from its experiment and reactor IDs | `reactor.py`, `autolab/controller.py` |
 
@@ -66,7 +84,8 @@ The injected faults in the demo config:
 | `algae_sim/control.py` | Hysteresis thermostat with fail-safe and over-temperature trip |
 | `algae_sim/reactor.py` | One step: sense → decide → actuate → physics; telemetry, energy, safe state, fault injection |
 | `algae_sim/records.py` | `run.json` and `telemetry.jsonl`, the instrument-capture format |
-| `algae_sim/autolab/` | AutoLab adapters (`controller.py`, `sensor.py`), campaign chart, and an earlier database-free optimiser loop (`campaign.py`) |
+| `algae_sim/device/` | Device firmware (`core.py`: reactor bank, limits, idempotent commands, device clock) and the HTTP device service (`service.py`) |
+| `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign chart; an earlier database-free optimiser loop (`campaign.py`) |
 | `configs/` | Culture campaign and installation policy |
 | `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
 
@@ -75,7 +94,7 @@ The injected faults in the demo config:
 1. ✅ Reactor simulator: thermal, growth, sensors, controller, faults, reproducible run records.
 2. ✅ AutoLab read-only sensor adapter and optimiser loop.
 3. ✅ AutoLab stage-6 culture controller: replicates, telemetry, QC, contamination screens, evidence ledger.
-4. 🔨 **The reactor as its own device process:** a long-running local service AutoLab talks to over the network, so the device outlives AutoLab and an interrupted culture can be resumed.
+4. ✅ The reactor as its own device process: an HTTP device service with persisted state; AutoLab survives a crash mid-culture and resumes the hold.
 5. ⏸ Azure data pipeline: capture → parse → store → analyse device telemetry ([plan](docs/data-pipeline.md)).
 
 Working agreement for contributors and AI assistants: [AGENTS.md](AGENTS.md).

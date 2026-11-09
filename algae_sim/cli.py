@@ -23,6 +23,24 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--dropout", type=float, default=0.0, help="temp-sensor dropout prob.")
     run.add_argument("--out", type=Path, default=None, help="write run.json + telemetry.jsonl")
     run.add_argument("--plot", type=Path, default=None, help="save a PNG (needs matplotlib)")
+
+    device = sub.add_parser("device", help="run the reactor bank as a local device service")
+    device_sub = device.add_subparsers(dest="device_command", required=True)
+    serve = device_sub.add_parser("serve", help="start the device service (Ctrl-C to stop)")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8750)
+    serve.add_argument(
+        "--speed", type=float, default=0.0,
+        help="0 = lockstep (clients advance time); N = run at N x real time",
+    )
+    serve.add_argument(
+        "--state", type=Path, default=None,
+        help="directory to persist device state in (restored on restart)",
+    )
+    serve.add_argument("--settings", type=Path, default=None, help="device settings JSON file")
+    serve.add_argument("--device-id", default="algae-sim-device")
+    status = device_sub.add_parser("status", help="print a running device's status")
+    status.add_argument("--url", default="http://127.0.0.1:8750")
     return parser
 
 
@@ -73,8 +91,54 @@ def plot(result: BatchResult, path: Path) -> None:
     fig.savefig(path, dpi=120)
 
 
+def device_main(args: argparse.Namespace) -> None:
+    if args.device_command == "status":
+        import urllib.request
+
+        with urllib.request.urlopen(f"{args.url.rstrip('/')}/v1/status", timeout=5) as response:
+            print(json.dumps(json.load(response), indent=2))
+        return
+
+    from algae_sim.device.core import DeviceSettings
+    from algae_sim.device.service import DeviceService, serve
+
+    raw = {} if args.settings is None else json.loads(args.settings.read_text())
+    service = DeviceService(
+        DeviceSettings.from_mapping(raw),
+        speed=args.speed,
+        state_dir=args.state,
+        device_id=args.device_id,
+    )
+
+    def ready(server: object) -> None:
+        host, port = server.server_address[:2]  # type: ignore[attr-defined]
+        restored = " (restored saved state)" if service.restored else ""
+        print(
+            f"algae-sim device listening on http://{host}:{port}  mode={service.mode}"
+            f" speed={service.speed:g}  device_time={service.core.now.isoformat()}{restored}",
+            flush=True,
+        )
+
+    import signal
+
+    def stop(signum: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    # Shut down cleanly (state saved) on Ctrl-C or a supervisor's SIGTERM, even when
+    # started in the background, where shells ignore SIGINT by default.
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        serve(service, host=args.host, port=args.port, ready=ready)
+    except KeyboardInterrupt:
+        print("device stopped; state saved" if args.state else "device stopped", flush=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = _parser().parse_args(argv)
+    if args.command == "device":
+        device_main(args)
+        return
     config = ReactorConfig(
         temperature_setpoint_c=args.setpoint,
         light_umol_m2_s=args.light,
