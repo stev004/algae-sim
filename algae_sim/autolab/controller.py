@@ -7,7 +7,13 @@ This adapter is the device side of that conversation:
 * **Re-checks its own limits.** A command outside this device's manifest, or too
   close to its over-temperature trip, is refused even if AutoLab validated it.
 * **Acknowledges what it applied.** Each accepted command starts a fresh batch
-  (a simulated re-inoculation) and reports the setpoints it actually applied.
+  (a simulated re-inoculation) on that reactor and reports the setpoints it applied.
+  AutoLab sends one command per biological replicate; each replicate reactor gets its
+  own random seed, so replicates differ the way real ones do.
+* **Says what it is holding.** Telemetry carries ``active_command_id`` so AutoLab can
+  confirm a hold before resuming it. The simulated reactors live in the AutoLab
+  process: if AutoLab restarts, they are gone, so a resume finds nothing to confirm
+  and AutoLab ends the hold safely (``hold_interrupted``) instead of trusting it.
 * **Reports only attested telemetry.** Measured temperature (``None`` on a probe
   dropout), applied setpoints, trips, faults and cumulative energy. Never the
   hidden true state.
@@ -73,12 +79,15 @@ class ControllerSettings:
     """Adapter-owned settings from the campaign's ``execution.controller.settings``."""
 
     seed: int = 0
-    reactor_ids: tuple[str, ...] = ("reactor-1",)
+    reactor_ids: tuple[str, ...] = ("reactor-1", "reactor-2", "reactor-3")
     ambient_c: float = 20.0
-    # Fault injection: batches (0-based, in the order this controller runs them)
-    # whose heater fails ``heater_fault_after_h`` hours into the hold.
-    heater_fault_batches: tuple[int, ...] = ()
+    # Fault injection, per reactor: {reactor_id: [hold numbers]}. Hold numbers count
+    # the setpoint commands that reactor has accepted, from 0. With one experiment
+    # per hold, hold N is the reactor's part of experiment N.
+    heater_faults: Mapping[str, tuple[int, ...]] | None = None
     heater_fault_after_h: float = 4.0
+    culture_crashes: Mapping[str, tuple[int, ...]] | None = None
+    culture_crash_after_h: float = 12.0
     temperature_dropout_probability: float = 0.0
     temperature_sensor_offset_c: float = 0.0
 
@@ -91,13 +100,25 @@ class ControllerSettings:
                 "controller_settings_invalid", f"unknown settings: {sorted(unknown)}"
             )
         values: dict[str, Any] = dict(raw)
-        for key in ("reactor_ids", "heater_fault_batches"):
-            if key in values:
-                values[key] = tuple(values[key])  # type: ignore[arg-type]
+        if "reactor_ids" in values:
+            values["reactor_ids"] = tuple(values["reactor_ids"])
+        for key in ("heater_faults", "culture_crashes"):
+            if values.get(key) is not None:
+                values[key] = {str(r): tuple(int(i) for i in v) for r, v in values[key].items()}
         settings = cls(**values)
         if not settings.reactor_ids:
             raise ControllerError("controller_settings_invalid", "need at least one reactor")
+        for key in ("heater_faults", "culture_crashes"):
+            unknown = set(getattr(settings, key) or {}) - set(settings.reactor_ids)
+            if unknown:
+                raise ControllerError(
+                    "controller_settings_invalid", f"{key} names unknown reactors {sorted(unknown)}"
+                )
         return settings
+
+    def faulted(self, kind: str, reactor_id: str, hold: int) -> bool:
+        table = getattr(self, kind) or {}
+        return hold in table.get(reactor_id, ())
 
 
 @dataclass(slots=True)
@@ -119,7 +140,7 @@ class SimulatedReactorController:
         self._settings = settings
         self._clock: Clock = clock or _UtcNow()
         self._batches: dict[str, _Batch] = {}
-        self._batch_count = 0
+        self._holds: dict[str, int] = {}  # accepted commands per reactor
         sensor_id = f"{controller_id}-od750"
         self._sensor = ReactorODSensor(
             sensor_id=sensor_id,
@@ -171,9 +192,10 @@ class SimulatedReactorController:
             )
         setpoint_c = float(command.temperature_setpoint.to(TEMP).value)
         light = float(command.light_intensity.to(LIGHT).value)
-        index = self._batch_count
-        self._batch_count += 1
-        faulty = index in self._settings.heater_fault_batches
+        reactor_id = command.reactor_id
+        hold = self._holds.get(reactor_id, 0)
+        self._holds[reactor_id] = hold + 1
+        s = self._settings
         config = ReactorConfig(
             temperature_setpoint_c=setpoint_c,
             light_umol_m2_s=light,
@@ -181,7 +203,12 @@ class SimulatedReactorController:
             ambient_c=self._settings.ambient_c,
             start_temperature_c=self._settings.ambient_c,
             seed=self._batch_seed(command),
-            heater_fails_after_h=self._settings.heater_fault_after_h if faulty else None,
+            heater_fails_after_h=(
+                s.heater_fault_after_h if s.faulted("heater_faults", reactor_id, hold) else None
+            ),
+            culture_crash_after_h=(
+                s.culture_crash_after_h if s.faulted("culture_crashes", reactor_id, hold) else None
+            ),
             temperature_dropout_probability=self._settings.temperature_dropout_probability,
             temperature_sensor_offset_c=self._settings.temperature_sensor_offset_c,
         )
@@ -219,8 +246,10 @@ class SimulatedReactorController:
         return None
 
     def _batch_seed(self, command: SetpointCommand) -> int:
-        # Tied to the experiment, not to call order, so a resumed campaign repeats it.
-        digest = hashlib.sha256(f"{self._settings.seed}:{command.experiment_id}".encode())
+        # Tied to experiment and reactor, not call order: reproducible, and each
+        # replicate is a different (but repeatable) culture.
+        key = f"{self._settings.seed}:{command.experiment_id}:{command.reactor_id}"
+        digest = hashlib.sha256(key.encode())
         return int.from_bytes(digest.digest()[:4], "big")
 
     async def enter_safe_state(self, reactor_id: str, reason: str) -> SafeStateAcknowledgement:
@@ -261,6 +290,7 @@ class SimulatedReactorController:
             trip_count=reactor.controller.trip_count,
             cumulative_energy=_q(round(reactor.total_energy_wh / 1000, 6), "kilowatt_hour"),
             faults=tuple(faults),
+            active_command_id=None if reactor.safe_state else batch.command.command_id,
         )
 
     def culture_sensor(self) -> ReactorODSensor:

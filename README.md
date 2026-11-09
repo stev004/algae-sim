@@ -23,15 +23,15 @@ The reactor runs its own local temperature control. AutoLab's optimiser proposes
 
 ## Run it
 
-Needs [uv](https://docs.astral.sh/uv/), Python 3.12+, and the local AutoLab repository. Stage-6 culture support isn't pushed yet, so `pyproject.toml` pins AutoLab to commit `b40e651` of the local checkout. From this folder:
+Needs [uv](https://docs.astral.sh/uv/), Python 3.12+, and the local AutoLab repository. Stage 6 isn't pushed to GitHub yet, so `pyproject.toml` pins AutoLab to commit `44e550e` (local `main`, stage 6 complete). From this folder:
 
 ```sh
 uv sync --all-extras          # installs pinned AutoLab + matplotlib
-uv run pytest                 # 46 tests, including a full AutoLab culture campaign
+uv run pytest                 # 49 tests, including a full AutoLab culture campaign
 uv run python -m algae_sim run --setpoint 30 --light 150 --out runs/demo --plot runs/demo/batch.png
 ```
 
-A full AutoLab culture campaign (20 simulated 36 h cultures, about 3 s):
+A full AutoLab culture campaign: 20 experiments × 3 replicate reactors = 60 simulated 36 h cultures, about 11 s.
 
 ```sh
 uv run autolab init --database runs/autolab.sqlite3
@@ -42,7 +42,13 @@ uv run autolab culture report <campaign-id> --database runs/autolab.sqlite3 --po
 
 Try: `--heater-fails-after 6` (heater dies at hour 6), `--dropout 0.2` (20% of temperature readings lost), or a setpoint of 37 °C (heat stress).
 
-In the campaign, batch 5 has a deliberately failed heater (set in the config's controller `settings`). AutoLab's culture QC fails it on `temperature_control`, because the mean deviation from the setpoint was about 10 °C. The run is kept in the evidence but excluded from what the optimiser learns.
+The campaign config injects faults through the controller's `settings`, so you can watch AutoLab's QC and its replicate rule (at least 2 of 3 replicates must pass) at work:
+
+| Experiment | Injected fault | AutoLab's verdict |
+|---|---|---|
+| 5 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control` (10 °C off target); 2 of 3 pass, so the experiment counts |
+| 9 | reactor-3's culture crashes at hour 12 | The contamination screen `growth_plausible` flags the OD drops; 2 of 3 pass |
+| 14 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
 
 ## Roadmap
 
@@ -50,6 +56,6 @@ In the campaign, batch 5 has a deliberately failed heater (set in the config's c
 2. ✅ AutoLab adapter: sensor entry point and closed-loop optimisation demo.
 3. ✅ AutoLab stage-6 controller: full culture campaigns (validation, commands, telemetry, QC, evidence ledger) against this reactor.
 4. ⏸ **Azure data pipeline** (side project, see [data-pipeline.md](docs/data-pipeline.md)): capture → parse → store → analyse reactor telemetry in Azure. Needs agreement on services and cost first.
-5. Later options: several reactors in parallel (needs AutoLab batch proposals), mid-hold pause and resume, a small dashboard.
+5. Later options: a simulated device that outlives the AutoLab process (persisted state), so mid-hold resume can be exercised for real; a small dashboard.
 
 See [architecture](docs/architecture.md), [model](docs/model.md), [progress and decisions](docs/progress.md) and the [working agreement](AGENTS.md).

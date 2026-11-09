@@ -37,6 +37,10 @@ The adapter owns the device:
 - It reports applied values, measured temperature, trips, faults and cumulative energy. It never reports true state.
 - Safe state turns the heater and lights off.
 
+**Replicates and faults.** AutoLab sends one setpoint command per replicate reactor (three by default). Each reactor counts its own holds, and its seed comes from the experiment ID plus the reactor ID, so replicates differ realistically but repeatably. `heater_faults` and `culture_crashes` in `settings` map reactor → hold numbers, so a fault can hit exactly one replicate of one experiment.
+
+**Resume.** Telemetry reports `active_command_id` (cleared at safe state). The simulated reactors live inside the AutoLab process, so if AutoLab restarts they're gone. A resume then finds no matching command and AutoLab safely ends the hold as `hold_interrupted`. That's the correct, conservative outcome; persisting the simulated device between processes would be needed to show a successful resume.
+
 **Clock coupling.** Before answering any call, the adapter steps the reactor forward to AutoLab's `clock.now()`. With `execution.clock: simulated`, AutoLab's `SteppedClock` jumps ahead, so a 36-hour hold costs a fraction of a second. The manifest declares `is_simulated: true`, which AutoLab requires before it will use a simulated clock. The batch seed comes from the experiment ID, so a resumed campaign recreates the same culture.
 
 `campaign.py` is the earlier, database-free loop. It's kept as a quick demo of the optimiser alone.

@@ -2,13 +2,19 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-09
+## Current handoff — 2026-11-09 (later)
 
-algae-sim now drives AutoLab's real stage-6 culture campaigns. A 20-experiment campaign through `autolab culture run` completes in about 3 s with 19 observed and 1 QC-failed; the failed batch is the injected heater fault, caught by `temperature_control` (mean deviation 10.0 °C). The best results cluster at 26–31 °C and 130–220 µmol/m²/s. All 120 OD readings are reported as simulated evidence. 46 tests pass, including an end-to-end campaign through AutoLab's CLI.
+The adapter is updated to AutoLab's completed stage 6 (local `main` 44e550e, pinned). A 20-experiment campaign with 3 replicate reactors each (60 cultures) runs in about 11 s: 19 observed, 1 QC-failed. All three injected scenarios behave as designed: a single-replicate heater fault (exp 5) and a culture crash caught by the contamination screen (exp 9) each fail only their replicate, while a double heater fault (exp 14) fails the experiment under the 2-of-3 rule. 49 tests pass.
 
-Dependency note: AutoLab's stage-6 work isn't pushed, so `pyproject.toml` pins AutoLab to local commit `b40e651` (`stage6-culture-slice-b`). It was briefly an editable path dependency. That broke the end-to-end test when the parallel AutoLab session began changing the culture config format (`reactor_id` → `reactor_ids` for replicates, and `active_command_id` for resume). Once that work lands, update the adapter and config and re-pin to the pushed GitHub commit.
+Next decision for Steven: the Azure data pipeline, or a persistent simulated device so AutoLab's mid-hold resume can be shown succeeding.
 
-Next decision for Steven: start the Azure pipeline (choose services and cost ceiling first), or the next AutoLab stage-6 slice (parallel reactors with batch proposals, mid-hold resume).
+## 2026-11-09 — Stage-6 completion update
+
+- **Decision:** fault injection is per reactor and per hold (`heater_faults`, `culture_crashes`), replacing the global batch counter, so individual replicates can be targeted.
+- **Decision:** replicate seeds come from the experiment ID plus the reactor ID.
+- Telemetry reports `active_command_id`. Because the simulated reactors don't outlive the process, AutoLab resume safely ends the hold; this is documented as a known limitation.
+- Reactor gained a culture-crash fault (biomass loss from a set hour) to exercise AutoLab's contamination screens.
+- Earlier the same day an editable `../autolab` dependency broke the end-to-end test when the parallel AutoLab session changed the config format, and my commit went in with that test failing because piping pytest through `tail` hid it. AutoLab is now always pinned to a commit, and test exit codes are checked before committing.
 
 ## 2026-11-09 — AutoLab culture controller
 

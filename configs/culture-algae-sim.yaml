@@ -1,4 +1,4 @@
-# Copied from AutoLab's configs/culture-algae-sim.yaml, plus adapter settings.
+# Copied from AutoLab's configs/culture-algae-sim.yaml (main 44e550e), plus adapter settings.
 # Culture campaign: tune temperature setpoint and light for a simulated algae
 # photobioreactor, maximising end-point OD750 while minimising energy.
 #
@@ -37,7 +37,9 @@ parameter_space:
     resolution: 1
 
 culture_design:
-  reactor_id: reactor-1
+  # Three biological replicates; at least two must pass QC for the run to count.
+  reactor_ids: [reactor-1, reactor-2, reactor-3]
+  minimum_passing_replicates: 2
   duration: {value: 36, unit: hour}
   sampling_interval: {value: 6, unit: hour}
   sample_tolerance: {value: 10, unit: minute}
@@ -49,17 +51,26 @@ culture_qc:
   minimum_telemetry_coverage: 0.9
   maximum_missing_reading_fraction: 0.2
   require_final_reading: true
+  # Illustrative contamination screens (not validated for any organism).
+  maximum_od_drop: 0.05
+  maximum_specific_growth_rate_per_hour: 0.5
 
 execution:
   controller:
     adapter: algae-sim-reactor
     controller_id: algae-sim-ctrl-001
+    # algae-sim adapter settings: injected faults, to show QC and the replicate rule.
+    #   experiment 5:  reactor-2 heater fails   -> that replicate fails, 2 of 3 pass
+    #   experiment 9:  reactor-3 culture crash  -> contamination screen, 2 of 3 pass
+    #   experiment 14: reactor-1 and reactor-2 heaters fail -> only 1 passes, QC fails
     settings:
       seed: 7
-      # Batch 5's heater fails 4 h in, to show culture QC catching a device fault.
-      heater_fault_batches: [5]
+      heater_faults: {reactor-2: [5, 14], reactor-1: [14]}
       heater_fault_after_h: 4.0
+      culture_crashes: {reactor-3: [9]}
+      culture_crash_after_h: 12.0
   clock: simulated
+  on_interrupt: safe_state
 
 optimization:
   strategy: bayesian

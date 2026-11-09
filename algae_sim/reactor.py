@@ -40,6 +40,9 @@ class ReactorConfig:
     heater_fails_after_h: float | None = None
     temperature_dropout_probability: float = 0.0
     temperature_sensor_offset_c: float = 0.0
+    # Culture crash (e.g. contamination by grazers): biomass is lost from this hour.
+    culture_crash_after_h: float | None = None
+    culture_crash_loss_per_h: float = 0.15
     thermal: ThermalParams = field(default_factory=ThermalParams)
     growth: GrowthParams = field(default_factory=GrowthParams)
 
@@ -130,6 +133,9 @@ class Reactor:
             cfg.growth,
             cfg.dt_s,
         )
+        crash_at = cfg.culture_crash_after_h
+        if crash_at is not None and self.elapsed_s >= crash_at * 3600:
+            self.true_biomass_g_per_l *= 1.0 - cfg.culture_crash_loss_per_h * cfg.dt_s / 3600
         self.true_temperature_c = step_temperature(
             self.true_temperature_c, self.last_applied, cfg.ambient_c, cfg.thermal, cfg.dt_s
         )

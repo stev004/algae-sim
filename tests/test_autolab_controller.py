@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import yaml
 
 pytest.importorskip("autonomous_lab.culture")
 
@@ -66,6 +67,7 @@ def test_discovered_through_autolab_registry():
     assert isinstance(controller.culture_sensor(), ReadOnlySensor)
     manifest = run(controller.capability_manifest())
     assert manifest.is_simulated and manifest.controller_id == "ctrl-9"
+    assert manifest.reactor_ids == {"reactor-1", "reactor-2", "reactor-3"}
 
 
 def test_refuses_commands_outside_its_own_limits():
@@ -138,7 +140,7 @@ def test_safe_state_turns_heater_and_lights_off():
 
 
 def test_injected_heater_fault_is_reported_as_attested_fault():
-    clock, ctrl = make(heater_fault_batches=[0], heater_fault_after_h=2.0)
+    clock, ctrl = make(heater_faults={"reactor-1": [0]}, heater_fault_after_h=2.0)
 
     async def go():
         await ctrl.apply_setpoints(command(setpoint=30))
@@ -172,15 +174,80 @@ def test_same_experiment_same_culture():
 def test_unknown_settings_rejected():
     with pytest.raises(ControllerError):
         create_controller(controller_id="c", settings={"sead": 1}, clock=SteppedClock(START))
+    with pytest.raises(ControllerError):
+        make(heater_faults={"reactor-9": [0]})
+
+
+def test_reports_the_command_it_holds_until_safe_state():
+    clock, ctrl = make()
+
+    async def go():
+        cmd = command()
+        await ctrl.apply_setpoints(cmd)
+        await clock.sleep_until(START + timedelta(hours=1))
+        holding = await ctrl.read_telemetry("reactor-1")
+        await ctrl.enter_safe_state("reactor-1", "hold complete")
+        released = await ctrl.read_telemetry("reactor-1")
+        return cmd, holding, released
+
+    cmd, holding, released = run(go())
+    assert holding.active_command_id == cmd.command_id
+    assert released.active_command_id is None
+
+
+def od_after(ctrl, clock, reactor_id, experiment, hours):
+    async def go():
+        await clock.sleep_until(START + timedelta(hours=hours))
+        sensor = ctrl.culture_sensor()
+        if not sensor.is_open:
+            await sensor.open()
+            await sensor.self_test()
+        m = await sensor.read(od_request(experiment, uuid4(), reactor_id))
+        assert m.sample_id == reactor_id
+        return float(m.raw_value)
+
+    return run(go())
+
+
+def test_replicates_are_independent_but_reproducible():
+    experiment = uuid4()
+
+    def finals():
+        clock, ctrl = make(seed=3)
+        for reactor in ("reactor-1", "reactor-2"):
+            run(ctrl.apply_setpoints(command(reactor=reactor, experiment_id=experiment)))
+        return [od_after(ctrl, clock, r, experiment, 36) for r in ("reactor-1", "reactor-2")]
+
+    first, again = finals(), finals()
+    assert first == again  # same experiment, same cultures
+    assert first[0] != first[1]  # but each replicate is its own culture
+    assert abs(first[0] - first[1]) < 0.1  # ...grown under the same conditions
+
+
+def test_faults_hit_only_the_named_reactor_and_hold():
+    experiment = uuid4()
+    clock, ctrl = make(culture_crashes={"reactor-3": [1]}, culture_crash_after_h=6.0)
+    for _hold in range(2):  # hold 0 is normal; hold 1 restarts each culture at "now"
+        for reactor in ("reactor-1", "reactor-3"):
+            run(ctrl.apply_setpoints(command(reactor=reactor, experiment_id=experiment)))
+    # Second hold on reactor-3 crashes after 6 h; reactor-1 keeps growing.
+    od_12 = {r: od_after(ctrl, clock, r, experiment, 12) for r in ("reactor-1", "reactor-3")}
+    od_24 = {r: od_after(ctrl, clock, r, experiment, 24) for r in ("reactor-1", "reactor-3")}
+    assert od_24["reactor-1"] > od_12["reactor-1"]
+    assert od_24["reactor-3"] < od_12["reactor-3"]
 
 
 def test_full_autolab_culture_campaign(tmp_path):
     """End to end through AutoLab's own CLI: create, run 6 cultures, report."""
     autolab = Path(sys.executable).parent / "autolab"
-    config = (ROOT / "configs/culture-algae-sim.yaml").read_text()
-    config = config.replace("max_experiments: 20", "max_experiments: 6")
-    config = config.replace("startup_experiments: 8", "startup_experiments: 4")
-    (tmp_path / "campaign.yaml").write_text(config)
+    config = yaml.safe_load((ROOT / "configs/culture-algae-sim.yaml").read_text())
+    config["campaign"]["max_experiments"] = 5
+    config["optimization"]["startup_experiments"] = 3
+    # Experiment 1: one replicate fails (still counts). Experiment 3: two fail (QC fails).
+    config["execution"]["controller"]["settings"].update(
+        heater_faults={"reactor-1": [1, 3], "reactor-2": [3]}, culture_crashes={}
+    )
+    (tmp_path / "campaign.yaml").write_text(yaml.safe_dump(config))
     common = [
         "--database", str(tmp_path / "db.sqlite3"),
         "--policy", str(ROOT / "configs/culture-policy.yaml"),
@@ -195,7 +262,8 @@ def test_full_autolab_culture_campaign(tmp_path):
     campaign = cli("culture", "create", "campaign.yaml", *common, "--id-only").strip()
     status = cli("culture", "run", campaign, *common)
     assert "state: completed" in status
-    assert "qc_failed: 1" in status  # batch 5's heater fault
+    assert "qc_failed: 1" in status  # only experiment 3, where 2 of 3 replicates failed
+    assert "observed: 4" in status
     report = json.loads(cli("culture", "report", campaign, *common))
     assert report["evidence_origins"]["controller_adapter"] == "algae-sim-reactor"
     origins = report["evidence_origins"]
