@@ -6,7 +6,7 @@
 
 algae-sim now drives AutoLab's real stage-6 culture campaigns. A 20-experiment campaign through `autolab culture run` completes in about 3 s with 19 observed and 1 QC-failed; the failed batch is the injected heater fault, caught by `temperature_control` (mean deviation 10.0 °C). The best results cluster at 26–31 °C and 130–220 µmol/m²/s. All 120 OD readings are reported as simulated evidence. 46 tests pass, including an end-to-end campaign through AutoLab's CLI.
 
-Dependency note: AutoLab's stage-6 work is on its local, unpushed `stage6-culture-slice-b` branch, so `pyproject.toml` resolves AutoLab from `../autolab` (editable). Once AutoLab stage 6 is merged and pushed, switch back to a pinned git commit.
+Dependency note: AutoLab's stage-6 work isn't pushed, so `pyproject.toml` pins AutoLab to local commit `b40e651` (`stage6-culture-slice-b`). It was briefly an editable path dependency. That broke the end-to-end test when the parallel AutoLab session began changing the culture config format (`reactor_id` → `reactor_ids` for replicates, and `active_command_id` for resume). Once that work lands, update the adapter and config and re-pin to the pushed GitHub commit.
 
 Next decision for Steven: start the Azure pipeline (choose services and cost ceiling first), or the next AutoLab stage-6 slice (parallel reactors with batch proposals, mid-hold resume).
 

@@ -23,10 +23,10 @@ The reactor runs its own local temperature control. AutoLab's optimiser proposes
 
 ## Run it
 
-Needs [uv](https://docs.astral.sh/uv/), Python 3.12+, and the AutoLab repository checked out next to this one as `../autolab`, on a branch with stage-6 culture support (currently `stage6-culture-slice-b`, not yet pushed). From this folder:
+Needs [uv](https://docs.astral.sh/uv/), Python 3.12+, and the local AutoLab repository. Stage-6 culture support isn't pushed yet, so `pyproject.toml` pins AutoLab to commit `b40e651` of the local checkout. From this folder:
 
 ```sh
-uv sync --all-extras          # installs ../autolab (editable) + matplotlib
+uv sync --all-extras          # installs pinned AutoLab + matplotlib
 uv run pytest                 # 46 tests, including a full AutoLab culture campaign
 uv run python -m algae_sim run --setpoint 30 --light 150 --out runs/demo --plot runs/demo/batch.png
 ```
