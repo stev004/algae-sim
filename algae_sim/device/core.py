@@ -11,7 +11,11 @@ What a real reactor controller would do lives here, independent of any lab softw
   faults, energy, and the command it is holding;
 * enter a safe state (heater and lights off) on request;
 * keep a **device clock**. Time only moves forward. ``advance_to`` steps every
-  active reactor up to a given instant.
+  active reactor up to a given instant;
+* optionally **capture** what it measures, as numbered messages in an outbox: an
+  environment sample every ``CAPTURE_INTERVAL_S`` of device time and an event for
+  every OD reading. The service writes the outbox to an append-only log that a
+  separate uploader ships to the data pipeline (docs/data-pipeline.md).
 
 All values are illustrative; the growth model is not validated.
 """
@@ -33,6 +37,8 @@ LIGHT_MAX = 500.0
 MAX_HOLD_H = 96.0
 TRIP_C = 39.0
 OD_MAX = 4.0
+CAPTURE_INTERVAL_S = 600.0  # one environment sample per reactor per 10 device-minutes
+CAPTURE_SCHEMA_VERSION = "2"
 
 
 class DeviceError(Exception):
@@ -112,6 +118,7 @@ class Batch:
     applied_temperature_c: float
     applied_light: float
     acknowledgement: dict[str, Any] = field(default_factory=dict)
+    next_capture_s: float = 0.0  # hold-elapsed time of the next environment sample
 
 
 class DeviceCore:
@@ -125,6 +132,18 @@ class DeviceCore:
         self.batches: dict[str, Batch] = {}
         self.holds: dict[str, int] = {}
         self.acknowledged: dict[str, dict[str, Any]] = {}  # command_id -> ack (idempotency)
+        # Capture is off unless a host (the device service) enables it and drains it.
+        self.capture_source: str | None = None
+        self.outbox: list[dict[str, Any]] = []
+        self.capture_sequences: dict[str, int] = {}  # per reactor; never reused
+
+    def enable_capture(self, source: str) -> None:
+        """Start recording messages. ``source`` prefixes each reactor's device ID."""
+        self.capture_source = source
+
+    def drain_outbox(self) -> list[dict[str, Any]]:
+        messages, self.outbox = self.outbox, []
+        return messages
 
     # -- clock ---------------------------------------------------------------------
 
@@ -132,12 +151,14 @@ class DeviceCore:
         """Move device time forward to ``when`` (never backwards), stepping every reactor."""
         if when > self.now:
             self.now = when
-        for batch in self.batches.values():
+        for reactor_id, batch in self.batches.items():
             target_s = (self.now - batch.started_at).total_seconds()
             reactor = batch.reactor
             dt = reactor.config.dt_s
             while reactor.elapsed_s + dt <= target_s + 1e-9:
                 reactor.step()
+                if self.capture_source and reactor.elapsed_s + 1e-9 >= batch.next_capture_s:
+                    self._capture_environment(reactor_id, batch)
         return self.now
 
     # -- description ---------------------------------------------------------------
@@ -223,6 +244,8 @@ class DeviceCore:
             acknowledgement=ack,
         )
         self.acknowledged[command_id] = ack
+        if self.capture_source:
+            self._capture_environment(reactor_id, self.batches[reactor_id])
         return ack
 
     def _refusal(
@@ -262,11 +285,7 @@ class DeviceCore:
         batch = self._active(reactor_id)
         reactor = batch.reactor
         measured = reactor.last_measured_c
-        faults = []
-        if reactor.heater.failed:
-            faults.append("heater_not_responding")
-        if measured is None and reactor.elapsed_s > 0:
-            faults.append("temperature_probe_dropout")
+        faults = _faults(reactor)
         return {
             "reactor_id": reactor_id,
             "sampled_at": self.now.isoformat(),
@@ -288,6 +307,14 @@ class DeviceCore:
             return None
         self.advance_to(self.now)
         od = batch.reactor.read_od750()
+        if self.capture_source:
+            self._capture(
+                reactor_id,
+                batch,
+                "od",
+                measurements={"od750": od, "saturated": od >= OD_MAX},
+                truth={"biomass_g_per_l": round(batch.reactor.true_biomass_g_per_l, 6)},
+            )
         return {
             "reactor_id": reactor_id,
             "od750": od,
@@ -295,6 +322,68 @@ class DeviceCore:
             "measured_at": self.now.isoformat(),
             "hold_elapsed_h": round(batch.reactor.elapsed_s / 3600, 4),
         }
+
+    # -- capture ------------------------------------------------------------------
+
+    def _capture_environment(self, reactor_id: str, batch: Batch) -> None:
+        r = batch.reactor
+        measured = r.last_measured_c
+        self._capture(
+            reactor_id,
+            batch,
+            "environment",
+            measurements={"temperature_c": None if measured is None else round(measured, 1)},
+            control={
+                "temperature_setpoint_c": batch.applied_temperature_c,
+                "light_umol_m2_s": 0.0 if r.safe_state else batch.applied_light,
+                "heater_command": r.last_command,
+                "heater_applied": r.last_applied,
+                "tripped": r.controller.tripped,
+                "safe_state": r.safe_state,
+            },
+            energy_kwh=round(r.total_energy_wh / 1000, 6),
+            faults=_faults(r),
+            truth={
+                "temperature_c": round(r.true_temperature_c, 4),
+                "biomass_g_per_l": round(r.true_biomass_g_per_l, 6),
+            },
+        )
+        batch.next_capture_s = r.elapsed_s + CAPTURE_INTERVAL_S
+
+    def _capture(
+        self,
+        reactor_id: str,
+        batch: Batch,
+        kind: str,
+        *,
+        measurements: dict[str, Any],
+        truth: dict[str, Any],
+        **extra: Any,
+    ) -> None:
+        """Append one message. Its time is the reactor's own step time, not ``now``."""
+        sequence = self.capture_sequences.get(reactor_id, 0)
+        self.capture_sequences[reactor_id] = sequence + 1
+        r = batch.reactor
+        self.outbox.append(
+            {
+                "schema_version": CAPTURE_SCHEMA_VERSION,
+                "kind": kind,
+                "device_id": f"{self.capture_source}/{reactor_id}",
+                "sequence": sequence,
+                "timestamp": (batch.started_at + timedelta(seconds=r.elapsed_s)).isoformat(),
+                "context": {
+                    "command_id": batch.command_id,
+                    "experiment_id": batch.experiment_id,
+                    "hold_number": batch.acknowledgement.get("hold_number"),
+                    "hold_elapsed_h": round(r.elapsed_s / 3600, 4),
+                },
+                "measurements": measurements,
+                **extra,
+                # Ground truth for testing only; a real device can't know it and the
+                # pipeline drops it at the parse step.
+                "simulator_truth": truth,
+            }
+        )
 
     def status(self) -> dict[str, Any]:
         reactors = {}
@@ -328,3 +417,12 @@ class DeviceCore:
             raise DeviceError("no_active_batch", f"reactor {reactor_id!r} has no batch")
         self.advance_to(self.now)
         return batch
+
+
+def _faults(reactor: Reactor) -> list[str]:
+    faults = []
+    if reactor.heater.failed:
+        faults.append("heater_not_responding")
+    if reactor.last_measured_c is None and reactor.elapsed_s > 0:
+        faults.append("temperature_probe_dropout")
+    return faults

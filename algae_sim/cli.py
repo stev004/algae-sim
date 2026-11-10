@@ -39,8 +39,34 @@ def _parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--settings", type=Path, default=None, help="device settings JSON file")
     serve.add_argument("--device-id", default="algae-sim-device")
+    serve.add_argument(
+        "--capture", type=Path, default=None,
+        help="append captured telemetry to DIR/telemetry.jsonl for the data pipeline",
+    )
     status = device_sub.add_parser("status", help="print a running device's status")
     status.add_argument("--url", default="http://127.0.0.1:8750")
+
+    pipeline = sub.add_parser("pipeline", help="local instrument-data pipeline")
+    pipeline_sub = pipeline.add_subparsers(dest="pipeline_command", required=True)
+    ingest = pipeline_sub.add_parser("ingest", help="run the ingest endpoint (Ctrl-C to stop)")
+    ingest.add_argument("--data", type=Path, default=Path("runs/pipeline"))
+    ingest.add_argument("--host", default="127.0.0.1")
+    ingest.add_argument("--port", type=int, default=8760)
+    upload = pipeline_sub.add_parser("upload", help="ship a device capture log to the ingest")
+    upload.add_argument("--capture", type=Path, required=True, help="the device's capture DIR")
+    upload.add_argument("--url", default="http://127.0.0.1:8760")
+    upload.add_argument("--follow", action="store_true", help="keep watching for new lines")
+    upload.add_argument(
+        "--exit-when-idle", type=float, default=None, metavar="SECONDS",
+        help="with --follow: stop after this long with nothing new to send",
+    )
+    upload.add_argument(
+        "--replay", action="store_true",
+        help="reset the cursor and send the whole log again (tests deduplication)",
+    )
+    report = pipeline_sub.add_parser("report", help="summarise what the pipeline stored")
+    report.add_argument("--data", type=Path, default=Path("runs/pipeline"))
+    report.add_argument("--json", action="store_true")
     return parser
 
 
@@ -108,6 +134,7 @@ def device_main(args: argparse.Namespace) -> None:
         speed=args.speed,
         state_dir=args.state,
         device_id=args.device_id,
+        capture_dir=args.capture,
     )
 
     def ready(server: object) -> None:
@@ -134,10 +161,58 @@ def device_main(args: argparse.Namespace) -> None:
         print("device stopped; state saved" if args.state else "device stopped", flush=True)
 
 
+def pipeline_main(args: argparse.Namespace) -> None:
+    if args.pipeline_command == "report":
+        from algae_sim.pipeline.analyse import format_report, report
+
+        data = report(args.data)
+        print(json.dumps(data, indent=2) if args.json else format_report(data))
+        return
+    if args.pipeline_command == "upload":
+        from algae_sim.device.service import CAPTURE_FILE
+        from algae_sim.pipeline.uploader import Uploader
+
+        uploader = Uploader(args.capture / CAPTURE_FILE, args.url)
+        if args.replay:
+            uploader.reset()
+        try:
+            uploader.run(
+                follow=args.follow,
+                exit_when_idle_s=args.exit_when_idle,
+                report=lambda line: print(line, flush=True),
+            )
+        except KeyboardInterrupt:
+            print("uploader stopped; cursor saved", flush=True)
+        return
+
+    import signal
+
+    from algae_sim.pipeline.ingest import IngestService, serve
+
+    service = IngestService(args.data)
+
+    def ready(server: object) -> None:
+        host, port = server.server_address[:2]  # type: ignore[attr-defined]
+        print(f"ingest listening on http://{host}:{port}  data={args.data}", flush=True)
+
+    def stop(signum: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        serve(service, host=args.host, port=args.port, ready=ready)
+    except KeyboardInterrupt:
+        print("ingest stopped", flush=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     if args.command == "device":
         device_main(args)
+        return
+    if args.command == "pipeline":
+        pipeline_main(args)
         return
     config = ReactorConfig(
         temperature_setpoint_c=args.setpoint,

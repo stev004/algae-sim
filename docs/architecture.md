@@ -17,7 +17,7 @@
  algae_sim (standard library only) — the "device"
    true state ─▶ TemperatureSensor ─▶ HysteresisController ─▶ Heater ─▶ true state
    (hidden)        noise/dropouts       fail-safe, trip          may fail
-          └──▶ OpticalDensitySensor ─▶ telemetry.jsonl ─▶ (future) Azure pipeline
+          └──▶ OpticalDensitySensor ─▶ capture log ─▶ data pipeline (local; Azure planned)
 ```
 
 ## Boundaries
@@ -71,3 +71,18 @@ Every reading and telemetry sample is stamped with device time.
 **Persistence and resume.** The service pickles its firmware state after every command and about once a second, written atomically. Restarting the service resumes from the saved state. If AutoLab crashes, the device keeps holding. On restart, AutoLab reads `active_command_id` from each reactor, confirms the hold, and continues the schedule. Readings whose windows passed during the outage are recorded as missing, and QC judges whether enough of the hold was observed.
 
 **Cost of realism.** Over HTTP an experiment takes about 1 s in lockstep, against about 0.5 s in-process. At high paced speeds, a few real seconds of AutoLab restart become hours of culture time, so the resume demo relaxes telemetry coverage to 75% and reports the gap it actually saw. The service listens on 127.0.0.1 with no authentication: it's for one local machine.
+
+## The data pipeline (roadmap item 5, local version)
+
+```text
+device service ─▶ capture log ─▶ uploader ─HTTP─▶ ingest ─▶ raw batches + SQLite ─▶ report
+```
+
+With `--capture DIR` the device records what it measured: environment samples every 10 device-minutes and every OD reading. It writes them as numbered messages to an append-only log. The uploader is a separate process that ships the log to the ingest endpoint, which validates, deduplicates and stores it. The analysis step summarises each culture hold from the stored data alone. Its flags agree with AutoLab's QC in the demo, which checks the data path end to end.
+
+Boundaries:
+- Capture never affects control or what AutoLab sees: the OD readings are identical with capture on or off (tested).
+- Each stage can be down independently. The log buffers while the uploader or ingest is down, and the cursor and dedupe keys make resends harmless.
+- Simulator truth is dropped at parse, so analysis sees only what a real device could report.
+
+Details and the Azure mapping are in [data-pipeline.md](data-pipeline.md).

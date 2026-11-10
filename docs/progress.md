@@ -2,11 +2,20 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-09 (night)
+## Current handoff — 2026-11-10
 
-Roadmap item 4 is done: the reactor bank runs as its own device service (`python -m algae_sim device serve`) and AutoLab drives it over HTTP through the `algae-sim-device` adapter. `scripts/resume_demo.sh` SIGKILLs AutoLab 13 h into a 36 h hold; the device keeps all three reactors near 30 °C, and AutoLab restarts, confirms each hold and completes the experiment with all 18 OD readings. Outage length decides the QC verdict, not the resume: an 8.4 h unwatched gap (`OUTAGE_S=30`) still passed (1 of 6 readings missed, coverage just above 75%), while a 16.5 h gap (`OUTAGE_S=60`) failed `readings_complete` and `telemetry_coverage` on every replicate. 61 tests pass, including a crash-and-resume campaign in lockstep mode.
+Roadmap item 5 has its local version: a standard-library pipeline from the device capture log, through an uploader and an ingest endpoint, to raw batches and deduplicated SQLite tables, plus a per-hold report. `scripts/pipeline_demo.sh` runs a 15-experiment AutoLab campaign on the device with capture on. It shows outage buffering, draining, a fully deduplicated replay and quarantined bad lines. The pipeline's own flags match AutoLab's QC failures replicate for replicate. 82 tests pass.
 
-Next: the Azure data pipeline (needs service and cost choices first), or polish such as a live device dashboard.
+Next: the Azure version, with Steven closely involved (account, region, Data Explorer vs SQL, cost guard and teardown). See [data-pipeline.md](data-pipeline.md). A dashboard and write-up follow once the architecture settles.
+
+## 2026-11-10 — Local data pipeline
+
+- **Decision:** build the pipeline locally first, standard library only. Each stage has a narrow interface so the Azure version swaps storage and hosting, not rules. The local version is a stepping stone; Azure is the target.
+- **Decision:** the device captures to an append-only log; a separate uploader moves it. The log is the buffer, a byte-offset cursor records acknowledgements, and delivery is at-least-once with dedupe on `(device_id, sequence)`.
+- **Decision:** capture records what the device measured (periodic environment samples plus actual OD readings). It takes no extra OD readings, so capture can't change AutoLab's results.
+- **Decision:** keep raw batches as received, before parsing, so clean tables can be rebuilt if a rule changes. Rejected lines are stored with a reason, never dropped silently.
+- **Finding:** the uploader at first treated "capture log doesn't exist yet" as idle and quit before the campaign started. A missing log now means "waiting".
+- Checked current Azure pricing and free tiers (Functions Flex Consumption, Data Explorer free cluster, SQL Database free tier, IoT Hub Free, the free account, budgets). Recorded in data-pipeline.md.
 
 ## 2026-11-09 — The reactor as a device
 
