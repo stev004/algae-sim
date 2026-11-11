@@ -80,7 +80,7 @@ Every reading and telemetry sample is stamped with device time.
 device service ─▶ capture log ─▶ uploader ─HTTP─▶ ingest ─▶ raw batches + SQLite ─▶ report
 ```
 
-With `--capture DIR` the device records what it measured: environment samples every 10 device-minutes and every OD reading. It writes them as numbered messages to an append-only log. The uploader is a separate process that ships the log to the ingest endpoint, which validates, deduplicates and stores it. The analysis step summarises each culture hold from the stored data alone. Its flags agree with AutoLab's QC in the demo, which checks the data path end to end.
+With `--capture DIR` the device records what it measured: environment samples every 10 device-minutes, an extra sample the moment a protection trip fires, and every OD reading. It writes them as numbered messages to an append-only log. The uploader is a separate process that ships the log to the ingest endpoint, which validates, deduplicates and stores it. The analysis step summarises each culture hold from the stored data alone. Its flags agree with AutoLab's QC in the demo, which checks the data path end to end.
 
 Boundaries:
 - Capture never affects control or what AutoLab sees: the OD readings are identical with capture on or off (tested).

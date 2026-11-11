@@ -26,7 +26,7 @@ device service ──append──▶ capture log ──▶ uploader ──HTTP�
 
 | Stage | Module | What it guarantees |
 |---|---|---|
-| Capture | `device/core.py`, `device/service.py` | An environment sample every 10 device-minutes per reactor, and an event for every OD reading. One sequence counter per reactor. The log is written and fsynced *before* the state file, so a crash can repeat messages but never lose them. On restart, a torn last line is ended cleanly. |
+| Capture | `device/core.py`, `device/service.py` | An environment sample every 10 device-minutes per reactor, an extra one the moment a protection trip fires, and an event for every OD reading. One sequence counter per reactor. The log is written and fsynced *before* the state file, so a crash can repeat messages but never lose them. On restart, a torn last line is ended cleanly. |
 | Move | `pipeline/uploader.py` | A separate process. The log is the buffer, and a byte-offset cursor records what has been acknowledged. The cursor advances only after a 200 reply (at-least-once delivery). Only complete lines are sent. While the ingest is unreachable it backs off, doubling the wait up to 8 s. |
 | Parse/validate | `pipeline/parse.py` | Pure functions. Each line becomes one clean row or a named rejection: invalid JSON, wrong schema version, a missing or invalid field, a timestamp with no timezone, an implausible value, or an unknown kind. `simulator_truth` is dropped here. |
 | Store | `pipeline/store.py`, `pipeline/ingest.py` | The raw batch is kept byte-for-byte before parsing. Each batch lands in one SQLite transaction. `(device_id, sequence)` is the dedupe key, so resends and replays are counted, not stored twice. Rejected lines are kept with their reason. |
@@ -49,7 +49,7 @@ Message format, schema version 3: `kind` (`environment` | `od`), `device_id` (`<
 - The uploader started while the ingest was down, buffered about 8,000 lines (the exact number depends on timing) over several failed attempts, then drained them once the ingest came up.
 - A full replay stored 0 new rows and counted every message as a duplicate.
 - Three bad lines were quarantined: an old schema version, a torn write, and an impossible 412 °C reading.
-- The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 5 reactor-2 and hold 14 reactors 1 and 2 (heater faults, off setpoint), hold 9 reactor-3 (culture crash, OD drop) and hold 11 reactor-1 (CO2 valve stuck open: `protection_trip`, `ph_off_setpoint`). These are two independent views of the same events.
+- The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 5 reactor-2 and hold 6 reactors 1 and 2 (heater faults, off setpoint), hold 9 reactor-3 (culture crash, OD drop) and hold 11 reactor-1 (CO2 valve stuck open: `protection_trip`, `ph_off_setpoint`). These are two independent views of the same events.
 
 ## Azure version (planned)
 

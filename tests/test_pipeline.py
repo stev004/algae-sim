@@ -4,6 +4,7 @@ import json
 import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 
 import pytest
 
@@ -299,3 +300,31 @@ def test_analysis_flags_ph_faults_and_meters_co2(tmp_path):
     healthy = summaries["bank/reactor-3"]
     assert healthy.flags == [] and healthy.mean_abs_ph_deviation < 0.05
     assert closed_summaries["bank/reactor-2"].co2_g < healthy.co2_g
+
+
+def test_a_trip_is_captured_even_when_the_client_safes_the_reactor_at_once(tmp_path):
+    """AutoLab safes a tripped reactor within minutes, before the next 10-minute sample.
+
+    Samples taken in safe state don't describe the hold, so the device must log
+    the trip as it happens, or the pipeline never sees it.
+    """
+    core = capturing_core(co2_valve_faults={"reactor-1": (0,)}, co2_valve_fault_after_h=2.0)
+    start_hold(core, ph=6.8)
+    minute = START
+    while not core.telemetry("reactor-1")["protection_tripped"]:
+        minute += timedelta(minutes=1)
+        core.advance_to(minute)
+    core.safe_state("reactor-1", "protection trip")  # what AutoLab's runner does
+    core.advance_to(minute + timedelta(hours=1))
+
+    messages = core.drain_outbox()
+    env = [m for m in messages if m["kind"] == "environment"]
+    event = [m for m in env if m["control"]["tripped"] and not m["control"]["safe_state"]]
+    assert len(event) == 1  # the trip itself, logged before the reactor was safed
+    scheduled = [m["context"]["hold_elapsed_h"] for m in env if m not in event]
+    interval_h = CAPTURE_INTERVAL_S / 3600
+    assert all(abs(b - a - interval_h) < 1e-3 for a, b in pairwise(scheduled))
+    service = IngestService(tmp_path)
+    service.ingest("".join(json.dumps(m) + "\n" for m in messages).encode())
+    (summary,) = hold_summaries(service.db.connection)
+    assert "protection_trip" in summary.flags

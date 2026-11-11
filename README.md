@@ -18,7 +18,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
-  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 0.82" src="docs/images/progress.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 0.80" src="docs/images/progress.png">
 </picture>
 
 <picture>
@@ -87,16 +87,16 @@ uv run python -m algae_sim run --heater-fails-after 6 --plot runs/heater-fail.pn
 | **Honest failure semantics on a network.** "Never reached the device" is reported differently from "sent, no reply". Lost replies are resolved by resending the same command ID, which the device recognises and doesn't apply twice. Persistent silence is reported to AutoLab as ambiguous | `autolab/remote.py`, `device/core.py` |
 | **Fault injection to prove QC.** Per-replicate heater failures, culture crashes and stuck CO2 valves. AutoLab's per-replicate QC and its 2-of-3 replicate rule catch them | `configs/culture-algae-sim.yaml` |
 | **A data pipeline that can't lose or double-count.** The device logs what it measured, and a separate uploader buffers through outages and retries. The ingest keeps raw batches, validates every line, quarantines bad ones with a reason, and dedupes resends by device and sequence | `pipeline/`, `scripts/pipeline_demo.sh` |
-| **Reproducibility.** Seeded instruments; each culture's seed comes from its experiment and reactor IDs | `reactor.py`, `autolab/controller.py` |
+| **Reproducibility.** Seeded instruments; each culture's seed is the device seed, the reactor and that reactor's culture number, so rerunning a campaign gives byte-identical evidence and charts | `reactor.py`, `device/core.py` |
 
 The injected faults in the demo config:
 
 | Experiment | Fault | AutoLab's verdict |
 |---|---|---|
 | 5 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control`; 2 of 3 pass, so the experiment counts |
+| 6 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
 | 9 | reactor-3's culture crashes at hour 12 | Contamination screen `growth_plausible` flags the OD drops; 2 of 3 pass |
 | 11 | reactor-1's CO2 valve sticks open at hour 4 | The device trips on low pH and shuts off the CO2; AutoLab stops that replicate (`no_protection_trip`, `control:ph`); 2 of 3 pass |
-| 14 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
 
 ## Layout
 

@@ -4,9 +4,16 @@
 
 ## Current handoff — 2026-11-11
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f8421`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2, with an illustrative carbon model, a pH probe, a pH controller with low/high trips, and stuck-valve faults. The demo campaign optimises all three variables against OD750, energy and CO2. The pipeline capture format is now schema v3 with pH and CO2. 106 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags still match AutoLab's QC replicate for replicate, including the new CO2-valve fault.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f8421`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2, with an illustrative carbon model, a pH probe, a pH controller with low/high trips, and stuck-valve faults. The demo campaign optimises all three variables against OD750, energy and CO2. The pipeline capture format is now schema v3 with pH and CO2. 110 tests pass, including one that runs the same campaign twice and expects byte-identical charts; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags still match AutoLab's QC replicate for replicate, including the new CO2-valve fault.
 
 Next: the Azure version of the pipeline, with Steven closely involved (account, region, Data Explorer vs SQL, cost guard and teardown). See [data-pipeline.md](data-pipeline.md). A dashboard and write-up follow once the architecture settles.
+
+## 2026-11-11 — Reproducible campaigns
+
+- **Finding:** rerunning the demo gave slightly different charts. The device seeded each culture from AutoLab's experiment ID, and AutoLab mints fresh random IDs for every campaign, so measured OD drifted by about ±0.02 and the optimiser's later choices diverged. Chart drawing itself was already deterministic.
+- **Decision:** seed each culture from the device seed, the reactor and that reactor's culture (hold) number, which the device already persists. That is how a lab labels runs, and it depends on nothing the client sends. A test runs a campaign twice and compares the PNG bytes.
+- **Finding:** the double heater fault sat in experiment 14, chosen by the optimiser. Once results changed, it picked 20.5 °C there, where a dead heater is harmless next to the 20 °C room, and QC rightly passed it. The fault moved to start-up experiment 6 (31.6 °C), whose conditions come from the seed alone.
+- **Finding:** with the new seeds the pipeline stopped flagging the hold 11 trip. Trips were only visible in the 10-minute samples, AutoLab safes a tripped reactor within minutes, and safe-state samples are excluded, so detection had depended on a sample landing in that gap. **Decision:** the device logs an extra environment sample the moment a trip fires, like a real alarm log, without moving the regular schedule. Device state version 3, because a batch now remembers its last trip state.
 
 ## 2026-11-11 — Culture contract v2: pH held by CO2
 

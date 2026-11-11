@@ -209,10 +209,11 @@ def test_injected_heater_fault_is_reported_as_attested_fault():
     assert float(sample.measured["temperature"].value) < 25.0
 
 
-def test_same_experiment_same_culture():
-    experiment = uuid4()
+def test_same_culture_whatever_the_experiment_id():
+    """AutoLab mints new experiment IDs every campaign; the culture must not change."""
 
     def final_od():
+        experiment = uuid4()  # a fresh ID each time, as a new campaign would send
         clock, ctrl = make(seed=3)
 
         async def go():
@@ -226,6 +227,16 @@ def test_same_experiment_same_culture():
         return run(go())
 
     assert final_od() == final_od()
+
+
+def test_each_hold_on_a_reactor_is_a_new_culture():
+    experiment = uuid4()
+    clock, ctrl = make(seed=3)
+    finals = []
+    for hold in range(2):
+        run(ctrl.apply_setpoints(command(experiment_id=experiment)))
+        finals.append(od_after(ctrl, clock, "reactor-1", experiment, 24 * (hold + 1)))
+    assert finals[0] != finals[1]  # same conditions, different (repeatable) noise
 
 
 def test_unknown_settings_rejected():
@@ -305,8 +316,9 @@ def test_pareto_front_keeps_only_undominated_experiments():
     assert pareto_front([best, cheap, dominated, pricey]) == [best, cheap]
 
 
-def test_full_autolab_culture_campaign(tmp_path):
-    """End to end through AutoLab's own CLI: create, run 6 cultures, report."""
+def run_small_campaign(directory):
+    """Create and run a 5-experiment campaign through AutoLab's own CLI."""
+    directory.mkdir(parents=True, exist_ok=True)
     autolab = Path(sys.executable).parent / "autolab"
     config = yaml.safe_load((ROOT / "configs/culture-algae-sim.yaml").read_text())
     config["campaign"]["max_experiments"] = 5
@@ -317,24 +329,30 @@ def test_full_autolab_culture_campaign(tmp_path):
         culture_crashes={},
         co2_valve_faults={},
     )
-    (tmp_path / "campaign.yaml").write_text(yaml.safe_dump(config))
+    (directory / "campaign.yaml").write_text(yaml.safe_dump(config))
     common = [
-        "--database", str(tmp_path / "db.sqlite3"),
+        "--database", str(directory / "db.sqlite3"),
         "--policy", str(ROOT / "configs/culture-policy.yaml"),
     ]
 
     def cli(*args):
         return subprocess.run(
-            [str(autolab), *args], check=True, capture_output=True, text=True, cwd=tmp_path
+            [str(autolab), *args], check=True, capture_output=True, text=True, cwd=directory
         ).stdout
 
-    cli("init", "--database", str(tmp_path / "db.sqlite3"))
+    cli("init", "--database", str(directory / "db.sqlite3"))
     campaign = cli("culture", "create", "campaign.yaml", *common, "--id-only").strip()
     status = cli("culture", "run", campaign, *common)
+    report = json.loads(cli("culture", "report", campaign, *common))
+    return directory / "db.sqlite3", status, report
+
+
+def test_full_autolab_culture_campaign(tmp_path):
+    """End to end through AutoLab's own CLI: create, run 15 cultures, report, chart."""
+    db, status, report = run_small_campaign(tmp_path)
     assert "state: completed" in status
     assert "qc_failed: 1" in status  # only experiment 3, where 2 of 3 replicates failed
     assert "observed: 4" in status
-    report = json.loads(cli("culture", "report", campaign, *common))
     assert report["evidence_origins"]["controller_adapter"] == "algae-sim-reactor"
     origins = report["evidence_origins"]
     assert origins["od_readings"] == origins["od_readings_from_simulated_or_mock_sensors"] > 0
@@ -342,7 +360,7 @@ def test_full_autolab_culture_campaign(tmp_path):
     pytest.importorskip("matplotlib")
     from algae_sim.autolab.plot_campaign import load, pareto_front, plot
 
-    experiments = load(tmp_path / "db.sqlite3")
+    experiments = load(db)
     assert [e.index for e in experiments] == [0, 1, 2, 3, 4]
     assert [e.observed for e in experiments] == [True, True, True, False, True]
     assert "temperature drifted" in experiments[1].failures["reactor-1"]
@@ -353,3 +371,23 @@ def test_full_autolab_culture_campaign(tmp_path):
     assert sorted(p.name for p in written) == sorted(
         f"{name}{suffix}.png" for name in names for suffix in ("", "-dark")
     )
+
+
+def test_identical_campaigns_reproduce_the_same_evidence_and_charts(tmp_path):
+    """Same config, same seed: same cultures, same optimiser choices, same PNG bytes.
+
+    AutoLab gives each campaign fresh random IDs, so this guards the device's
+    seeding against depending on them.
+    """
+    pytest.importorskip("matplotlib")
+    from algae_sim.autolab.plot_campaign import load, plot
+
+    charts = []
+    for name in ("first", "second"):
+        db, _, _ = run_small_campaign(tmp_path / name)
+        experiments = load(db)
+        written = plot(experiments, tmp_path / name / "charts", startup=3)
+        charts.append((experiments, {p.name: p.read_bytes() for p in written}))
+    (first, first_png), (second, second_png) = charts
+    assert first == second
+    assert first_png == second_png

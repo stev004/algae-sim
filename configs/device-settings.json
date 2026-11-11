@@ -8,10 +8,10 @@
   "heater_faults": {
     "reactor-2": [
       5,
-      14
+      6
     ],
     "reactor-1": [
-      14
+      6
     ]
   },
   "heater_fault_after_h": 4.0,

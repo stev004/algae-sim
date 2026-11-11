@@ -77,12 +77,15 @@ execution:
     controller_id: algae-sim-ctrl-001
     # algae-sim adapter settings: injected faults, to show QC and the replicate rule.
     #   experiment 5:  reactor-2 heater fails   -> that replicate fails, 2 of 3 pass
+    #   experiment 6:  reactor-1 and reactor-2 heaters fail -> only 1 passes, QC fails
     #   experiment 9:  reactor-3 culture crash  -> contamination screen, 2 of 3 pass
     #   experiment 11: reactor-1 CO2 valve sticks open -> pH low trip, 2 of 3 pass
-    #   experiment 14: reactor-1 and reactor-2 heaters fail -> only 1 passes, QC fails
+    # A dead heater only shows when the setpoint is well above the 20 C room, so the
+    # heater faults sit in start-up experiments (0-7), whose conditions come from
+    # the seed alone rather than from what the optimiser has learned.
     settings:
       seed: 7
-      heater_faults: {reactor-2: [5, 14], reactor-1: [14]}
+      heater_faults: {reactor-2: [5, 6], reactor-1: [6]}
       heater_fault_after_h: 4.0
       culture_crashes: {reactor-3: [9]}
       culture_crash_after_h: 12.0

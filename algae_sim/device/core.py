@@ -49,7 +49,7 @@ OD_MAX = 4.0
 CAPTURE_INTERVAL_S = 600.0  # one environment sample per reactor per 10 device-minutes
 CAPTURE_SCHEMA_VERSION = "3"
 # Bumped when the pickled DeviceCore layout changes; older state files are refused.
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +178,7 @@ class Batch:
     applied: dict[str, float]  # the setpoints the device accepted, by variable name
     acknowledgement: dict[str, Any] = field(default_factory=dict)
     next_capture_s: float = 0.0  # hold-elapsed time of the next environment sample
+    was_tripped: bool = False  # protection state at the last step, to catch new trips
 
 
 class DeviceCore:
@@ -217,8 +218,16 @@ class DeviceCore:
             dt = reactor.config.dt_s
             while reactor.elapsed_s + dt <= target_s + 1e-9:
                 reactor.step()
-                if self.capture_source and reactor.elapsed_s + 1e-9 >= batch.next_capture_s:
-                    self._capture_environment(reactor_id, batch)
+                tripped = _tripped(reactor)
+                if self.capture_source:
+                    if reactor.elapsed_s + 1e-9 >= batch.next_capture_s:
+                        self._capture_environment(reactor_id, batch)
+                    elif tripped and not batch.was_tripped:
+                        # Log a trip the moment it happens, like a real alarm log. A
+                        # client may safe the reactor within minutes, and samples
+                        # taken in safe state don't describe the hold.
+                        self._capture_environment(reactor_id, batch, scheduled=False)
+                batch.was_tripped = tripped
         return self.now
 
     # -- description ---------------------------------------------------------------
@@ -277,7 +286,7 @@ class DeviceCore:
             batch_hours=MAX_HOLD_H,
             ambient_c=s.ambient_c,
             start_temperature_c=s.ambient_c,
-            seed=self._seed(experiment_id, reactor_id),
+            seed=self._seed(reactor_id, hold),
             heater_fails_after_h=(
                 s.heater_fault_after_h if s.faulted("heater_faults", reactor_id, hold) else None
             ),
@@ -336,10 +345,14 @@ class DeviceCore:
                 )
         return None
 
-    def _seed(self, experiment_id: str, reactor_id: str) -> int:
-        # Tied to experiment and reactor, not call order: reproducible, and each
-        # replicate is a different (but repeatable) culture.
-        key = f"{self.settings.seed}:{experiment_id}:{reactor_id}"
+    def _seed(self, reactor_id: str, hold: int) -> int:
+        # "Reactor-2, culture 5", the way a lab labels runs. Deliberately not the
+        # client's experiment ID: AutoLab mints fresh IDs for every campaign, so
+        # seeding on them made two identical campaigns grow different cultures.
+        # Each replicate is still its own culture (the reactor ID differs), and
+        # the hold counter is persisted, so a restarted device carries on the
+        # same sequence.
+        key = f"{self.settings.seed}:{reactor_id}:{hold}"
         return int.from_bytes(hashlib.sha256(key.encode()).digest()[:4], "big")
 
     def safe_state(self, reactor_id: str, reason: str) -> dict[str, Any]:
@@ -399,7 +412,9 @@ class DeviceCore:
 
     # -- capture ------------------------------------------------------------------
 
-    def _capture_environment(self, reactor_id: str, batch: Batch) -> None:
+    def _capture_environment(
+        self, reactor_id: str, batch: Batch, *, scheduled: bool = True
+    ) -> None:
         r = batch.reactor
         measured = _measured(r)
         applied = _applied(batch)
@@ -429,7 +444,8 @@ class DeviceCore:
                 "ph": round(r.true_ph, 4),
             },
         )
-        batch.next_capture_s = r.elapsed_s + CAPTURE_INTERVAL_S
+        if scheduled:  # an event sample leaves the 10-minute schedule alone
+            batch.next_capture_s = r.elapsed_s + CAPTURE_INTERVAL_S
 
     def _capture(
         self,
