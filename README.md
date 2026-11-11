@@ -14,9 +14,22 @@ It plugs into [AutoLab](https://github.com/stev004/autolab), a closed-loop exper
 
 AutoLab never touches the heater or the CO2 valve: the device owns its own control and protection. pH is a setpoint the device holds by dosing CO2, and the CO2 it uses is metered like energy.
 
-![AutoLab culture campaign on the simulated reactor](docs/images/campaign.png)
+One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour cultures, in seconds. The charts are drawn from AutoLab's own evidence database.
 
-*One campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour cultures, in seconds. **Left:** the trade-off between growth and energy that the optimiser explores. **Right:** each replicate's result; ✗ marks replicates that failed QC because of deliberately injected faults.*
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 0.82" src="docs/images/progress.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/tradeoffs-dark.png">
+  <img alt="Growth against energy used and against CO2 used, with the best trade-offs highlighted" src="docs/images/tradeoffs.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/qc-dark.png">
+  <img alt="Pass or fail for every reactor in every experiment, with the reason for each failure" src="docs/images/qc.png">
+</picture>
 
 > All parameters are illustrative teaching values. The growth model is educational and **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
@@ -26,7 +39,7 @@ Needs [uv](https://docs.astral.sh/uv/). uv fetches Python 3.12 and a pinned Auto
 
 ```sh
 git clone https://github.com/stev004/algae-sim.git && cd algae-sim
-./scripts/demo.sh            # full AutoLab culture campaign → runs/demo/campaign.png
+./scripts/demo.sh            # full AutoLab culture campaign → charts in runs/demo/charts/
 uv run pytest                # tests, including an end-to-end campaign
 ```
 
@@ -98,7 +111,7 @@ The injected faults in the demo config:
 | `algae_sim/records.py` | `run.json` and `telemetry.jsonl`, the instrument-capture format |
 | `algae_sim/device/` | Device firmware (`core.py`: reactor bank, limits, idempotent commands, device clock) and the HTTP device service (`service.py`) |
 | `algae_sim/pipeline/` | Data pipeline: parse/validate, raw + clean stores, ingest endpoint, uploader, per-hold analysis |
-| `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign chart; an earlier database-free optimiser loop (`campaign.py`) |
+| `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign charts (`plot_campaign.py`); an earlier database-free optimiser loop (`campaign.py`) |
 | `configs/` | Culture campaign and installation policy |
 | `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
 

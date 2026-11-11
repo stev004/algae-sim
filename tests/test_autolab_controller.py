@@ -294,6 +294,17 @@ def test_faults_hit_only_the_named_reactor_and_hold():
     assert od_24["reactor-3"] < od_12["reactor-3"]
 
 
+def test_pareto_front_keeps_only_undominated_experiments():
+    from algae_sim.autolab.plot_campaign import Experiment, pareto_front
+
+    def exp(i, od, energy, co2):
+        return Experiment(i, 30, 150, 7.5, True, od, energy, co2)
+
+    best, cheap = exp(0, 0.8, 3, 5), exp(1, 0.4, 1, 2)
+    dominated, pricey = exp(2, 0.3, 2, 3), exp(3, 0.8, 4, 5)
+    assert pareto_front([best, cheap, dominated, pricey]) == [best, cheap]
+
+
 def test_full_autolab_culture_campaign(tmp_path):
     """End to end through AutoLab's own CLI: create, run 6 cultures, report."""
     autolab = Path(sys.executable).parent / "autolab"
@@ -327,3 +338,18 @@ def test_full_autolab_culture_campaign(tmp_path):
     assert report["evidence_origins"]["controller_adapter"] == "algae-sim-reactor"
     origins = report["evidence_origins"]
     assert origins["od_readings"] == origins["od_readings_from_simulated_or_mock_sensors"] > 0
+
+    pytest.importorskip("matplotlib")
+    from algae_sim.autolab.plot_campaign import load, pareto_front, plot
+
+    experiments = load(tmp_path / "db.sqlite3")
+    assert [e.index for e in experiments] == [0, 1, 2, 3, 4]
+    assert [e.observed for e in experiments] == [True, True, True, False, True]
+    assert "temperature drifted" in experiments[1].failures["reactor-1"]
+    assert set(experiments[3].failures) == {"reactor-1", "reactor-2"}
+    assert pareto_front(experiments)  # never empty when something was observed
+    written = plot(experiments, tmp_path / "charts", startup=3)
+    names = ("progress", "tradeoffs", "qc")
+    assert sorted(p.name for p in written) == sorted(
+        f"{name}{suffix}.png" for name in names for suffix in ("", "-dark")
+    )

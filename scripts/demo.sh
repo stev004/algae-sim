@@ -2,7 +2,7 @@
 # One-command demo: a full AutoLab culture campaign on the simulated reactor.
 # 20 experiments x 3 replicate reactors = 60 simulated 36 h cultures, about 15 s
 # of simulation once dependencies are installed.
-# Writes everything under runs/demo/ (git-ignored) and draws runs/demo/campaign.png.
+# Writes everything under runs/demo/ (git-ignored) and draws charts into runs/demo/charts/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,5 +19,5 @@ uv run autolab culture run "$CID" "${COMMON[@]}" \
   --optimizer-root "$OUT/optimizer" --artifact-root "$OUT/artifacts" 2>&1 \
   | grep -v "study created"
 uv run autolab culture report "$CID" "${COMMON[@]}" > "$OUT/report.json"
-uv run python -m algae_sim.autolab.plot_campaign "$OUT/autolab.sqlite3" "$OUT/campaign.png"
+uv run python -m algae_sim.autolab.plot_campaign "$OUT/autolab.sqlite3" "$OUT/charts"
 echo "report: $OUT/report.json"
