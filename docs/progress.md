@@ -8,6 +8,14 @@ algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f
 
 Next: the Azure version of the pipeline, with Steven closely involved (account, region, Data Explorer vs SQL, cost guard and teardown). See [data-pipeline.md](data-pipeline.md). A dashboard and write-up follow once the architecture settles.
 
+## 2026-11-11 — Chlorella light and pH from primary sources
+
+- Read the full texts through Steven's OU Library access (values and citations only go into the repo): Choi & Lee 2011, Serra-Maia et al. 2016, Schwaderer et al. 2011 (web appendix), Bernard & Rémond 2012.
+- **Decision:** replace the Steele light curve with the curve Schwaderer et al. fitted to *C. vulgaris* data (I_opt 142, I_k 23.5). Bright light now costs some growth (0.84 at 400 µmol/m²/s) rather than most of it (0.46).
+- **Decision:** pH limits 3.0 / 7.5 / 9.0 from Choi & Lee's measurements (was 5.5 / 7.8 / 10, illustrative). Low pH is no longer bad for growth, only expensive in CO₂; high pH is now the risky side.
+- **Finding:** Choi & Lee's temperature data, which the model was not built from, matches the pooled temperature curve to within about 0.1 at every point.
+- **Finding:** the demo's best culture is now 29.9 °C, 234 µmol/m²/s, pH 7.55, and the optimiser concentrates on pH 7.3–7.85. All four faults still fail QC.
+
 ## 2026-11-11 — Chlorella vulgaris parameters
 
 - **Decision:** replace illustrative growth values with published *C. vulgaris* values, each cited with a confidence level in model.md. They are literature-typical, pooled across strains, not a fit to one strain; the model is still not validated.

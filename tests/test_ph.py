@@ -29,6 +29,12 @@ class TestChemistry:
         assert ph_factor(7.0, PG) < 1.0 and ph_factor(8.5, PG) < 1.0
         assert ph_factor(6.0, PG) < ph_factor(7.0, PG)
 
+    def test_matches_chlorella_measurements(self):
+        # Choi & Lee 2011: best at 7-7.5, still growing at 5, dead at 3 and at 9.
+        assert ph_factor(7.0, PG) > 0.95 and ph_factor(7.5, PG) == pytest.approx(1.0)
+        assert ph_factor(5.0, PG) > 0.5
+        assert ph_factor(3.0, PG) == ph_factor(9.0, PG) == 0.0
+
     @pytest.mark.parametrize("bad", [dict(ph_min=8.0), dict(ph_max=7.0)])
     def test_rejects_disordered_cardinals(self, bad):
         with pytest.raises(ValueError):

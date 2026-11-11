@@ -18,7 +18,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
-  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.67" src="docs/images/progress.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.52" src="docs/images/progress.png">
 </picture>
 
 <picture>
@@ -31,7 +31,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
   <img alt="Pass or fail for every reactor in every experiment, with the reason for each failure" src="docs/images/qc.png">
 </picture>
 
-> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain, and some (pH limits, the carbonate buffer) are still illustrative. The model is **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
+> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
 ## Quick start
 

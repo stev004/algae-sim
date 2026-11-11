@@ -4,7 +4,9 @@
 
 * f_T: cardinal temperature model with inflection (Rosso et al. 1993), 0 outside
   [t_min, t_max], 1 at t_opt.
-* f_I: Steele photoinhibition curve, peaks at i_opt and declines above it.
+* f_I: light response with photoinhibition (Bernard & Remond 2012 form; "Model 2"
+  in Schwaderer et al. 2011): rises with initial slope set by i_k, is 1 at i_opt,
+  then declines slowly in bright light.
 * f_pH: the pH response, passed in as ``ph_response`` (see ``algae_sim.carbon``);
   1.0 means pH is not modelled.
 * logistic term: crude stand-in for self-shading and nutrient limits.
@@ -17,7 +19,6 @@ not a fit to one strain, and the model itself is still not validated.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 
@@ -28,9 +29,11 @@ class GrowthParams:
     t_min_c: float = 2.2  # cardinal temperatures: Rossi et al. 2023, mean of 13 data sets
     t_opt_c: float = 28.9
     t_max_c: float = 42.8
-    # Schwaderer et al. 2011 (Haldane fit). The Steele curve with this optimum
-    # over-penalises bright light compared with Pozzobon 2022: pending a better source.
+    # Light curve fitted to C. vulgaris growth data (Dauta et al. 1990) by Schwaderer
+    # et al. 2011, web appendix: I_opt 142.1, mu_max 0.94 /day, alpha 0.040.
     i_opt_umol_m2_s: float = 142.0
+    # i_k = mu_max / alpha: the irradiance scale of the initial slope (0.94 / 0.040).
+    i_k_umol_m2_s: float = 23.5
     carrying_capacity_g_per_l: float = 2.3  # lab batch with CO2 (Griffiths 2011)
     basal_loss_per_h: float = 0.007  # maintenance, C. sorokiniana (Kliphuis et al. 2011)
     heat_stress_loss_per_h_per_c: float = 0.05  # illustrative
@@ -38,8 +41,8 @@ class GrowthParams:
     def __post_init__(self) -> None:
         if not self.t_min_c < self.t_opt_c < self.t_max_c:
             raise ValueError("require t_min < t_opt < t_max")
-        if self.mu_max_per_h <= 0 or self.i_opt_umol_m2_s <= 0:
-            raise ValueError("mu_max and i_opt must be positive")
+        if min(self.mu_max_per_h, self.i_opt_umol_m2_s, self.i_k_umol_m2_s) <= 0:
+            raise ValueError("mu_max, i_opt and i_k must be positive")
         if self.carrying_capacity_g_per_l <= 0:
             raise ValueError("carrying capacity must be positive")
 
@@ -57,11 +60,19 @@ def temperature_factor(temperature_c: float, p: GrowthParams) -> float:
 
 
 def light_factor(intensity_umol_m2_s: float, p: GrowthParams) -> float:
-    """Steele curve; dimensionless, 0..1 with a maximum at i_opt."""
+    """Light response; dimensionless, 0..1 with a maximum of exactly 1 at i_opt.
+
+        f(I) = I / (I + i_k * (I / i_opt - 1) ** 2)
+
+    Chosen over the Steele curve because, with C. vulgaris parameters, Steele drops
+    to 0.46 at 400 umol/m2/s, while measured cultures keep most of their growth
+    in bright light (Pozzobon 2022). Choi & Lee 2011 saw stronger losses; see
+    docs/model.md.
+    """
     if intensity_umol_m2_s <= 0:
         return 0.0
-    ratio = intensity_umol_m2_s / p.i_opt_umol_m2_s
-    return ratio * math.exp(1.0 - ratio)
+    i = intensity_umol_m2_s
+    return i / (i + p.i_k_umol_m2_s * (i / p.i_opt_umol_m2_s - 1.0) ** 2)
 
 
 def gross_rate_per_h(

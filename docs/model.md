@@ -17,8 +17,8 @@ C = 4180 J/K (about 1 L of water), P = 100 W heater, K = 5 W/K loss to a 20 °C 
     dX/dt = μmax · f_T(T) · f_I(I) · f_pH(pH) · X · (1 − X/Xmax) − loss(T) · X
 
 - **f_T**: cardinal temperature model with inflection (Rosso et al., 1993). It's zero at or below 2.2 °C and at or above 42.8 °C, and 1 at the 28.9 °C optimum.
-- **f_I**: Steele light curve. It's 1 at 142 µmol/m²/s and drops at higher light (photoinhibition). This curve penalises bright light more than *C. vulgaris* shows (see below).
-- **f_pH**: cardinal pH model (Rosso et al., 1995). It's zero at or below pH 5.5 and at or above 10, and 1 at the pH 7.8 optimum (about 0.67 at 6.5 and 0.9 at 8.5). The optimum is sourced; the limits are illustrative. The fall-off at high pH also stands in for carbon limitation.
+- **f_I**: light curve with photoinhibition, f(I) = I / (I + I_k·(I/I_opt − 1)²) (Bernard & Rémond 2012 form; Schwaderer et al. 2011 "Model 2"). It's 1 at I_opt = 142 µmol/m²/s, with I_k = μmax/α = 23.5 µmol/m²/s, and keeps 0.84 of its best at 400 µmol/m²/s.
+- **f_pH**: cardinal pH model (Rosso et al., 1995). It's zero at or below pH 3 and at or above 9, and 1 at the pH 7.5 optimum (about 0.9 at 6.5 and 0.73 at 8.5), from *C. vulgaris* measurements (Choi & Lee 2011). The device's own low-pH trip at 5.5 is a protection limit, separate from the biology. The fall-off at high pH also stands in for carbon limitation.
 - **Crowding**: logistic limit Xmax = 2.3 g/L, a crude stand-in for self-shading and nutrients.
 - **Loss**: 0.007 /h maintenance, plus 0.05 /h per °C above 42.8 °C (heat stress, illustrative). The heater can't reach 42.8 °C, so heat stress only matters in tests.
 - μmax = 0.08 /h (about 1.9 per day), starting biomass 0.05 g/L, batch length 36 h.
@@ -58,16 +58,20 @@ Values are literature-typical for *Chlorella vulgaris*, pooled across strains an
 |---|---|---|---|
 | μmax | 0.08 /h (1.9 /day) | Pozzobon 2022, *Algal Research* 68:102874, doi:10.1016/j.algal.2022.102874 (2.11 /day measured at 25 °C, 200 µmol/m²/s); Rossi et al. 2023 (1.7–2 /day) | High |
 | T_min / T_opt / T_max | 2.2 / 28.9 / 42.8 °C | Rossi, Carecci & Ficara 2023, *Sci. Total Environ.* 873:162275, doi:10.1016/j.scitotenv.2023.162275, Table 3: mean of 13 data sets | High for T_opt; T_min is poorly constrained (range −12 to 13 °C) |
-| I_opt | 142 µmol/m²/s | Schwaderer et al. 2011, doi:10.4319/lo.2011.56.2.0589, as tabulated by López Muñoz & Bernard 2021, *Processes* 9:496 | Medium: a Haldane-fit optimum used in a Steele curve |
+| Light curve: I_opt, I_k | 142 µmol/m²/s, 23.5 µmol/m²/s | Schwaderer et al. 2011, *Limnol. Oceanogr.* 56:589, doi:10.4319/lo.2011.56.2.0589, web appendix: *C. vulgaris* fit (μmax 0.94 /day, α 0.040, I_opt 142.1) to Dauta et al. 1990 data, with the same curve form | High for the form and fit; see the light disagreement below |
 | CO₂ per g biomass | 1.83 g/g | Chisti 2007, *Biotechnol. Adv.* 25:294, doi:10.1016/j.biotechadv.2007.02.001 (about 50 % carbon); *C. vulgaris* measured at 48 % (Griffiths 2011 thesis) | High for nitrogen-replete cultures (±20 % with nitrogen status) |
 | OD750 per g/L | 3.2 | Griffiths et al. 2011, *J. Microbiol. Methods* 85:119, doi:10.1016/j.mimet.2011.02.005 | Medium: calibrations vary with pigment and instrument |
 | Xmax | 2.3 g/L | Griffiths 2011 thesis: lab airlift reactor, 0.29 % CO₂, 250 µmol/m²/s | Medium |
 | Maintenance loss | 0.007 /h | Kliphuis et al. 2011, doi:10.1007/s10811-010-9614-7, measured on *C. sorokiniana* | Low–medium (close relative, 37 °C) |
-| pH_opt | 7.8 | Rachlin & Grosso 1991, doi:10.1007/BF01065839 (optimum 7.5–8.0) | Medium (abstract only) |
+| pH_min / pH_opt / pH_max | 3.0 / 7.5 / 9.0 | Choi & Lee 2011, *J. Korean Soc. Environ. Eng.* 33:511, doi:10.4491/KSEE.2011.33.7.511: growth at pH 3–9, best at 7–7.5, cells died at 3 and 9; Rachlin & Grosso 1991, doi:10.1007/BF01065839, optimum 7.5–8.0 | Medium: one study for the limits |
 
-**Known gaps** (sources identified, full text not yet read):
-- **Bright light:** Pozzobon 2022 measured *C. vulgaris* still growing at about 60 % of its best rate at 4000 µmol/m²/s, but the Steele curve gives 46 % at 400. A Haldane curve with half-saturation and inhibition constants from Schwaderer et al. 2011 or Bernard & Rémond 2012 (doi:10.1016/j.biortech.2012.07.022) would fit better.
-- **pH limits:** Rachlin & Grosso report slowed, not stopped, growth from pH 3.0 to 6.2, so the real pH_min is probably well below 5.5.
-- **Temperature:** Serra-Maia et al. 2016 (doi:10.1016/j.algal.2016.06.016) is a direct *C. vulgaris* temperature study that could replace the pooled values.
-- **Light through a dense culture:** not modelled; Yun & Park 2001 (doi:10.1007/s002530100639) has *C. vulgaris* attenuation data.
+**Independent check.** Choi & Lee 2011 measured *C. vulgaris* growth at 10–35 °C, data the temperature values were not taken from. Relative to its best rate it gives 0.17, 0.57, 0.75, 0.96, 1.00 and 0.88 at 10, 15, 20, 25, 30 and 35 °C; the model gives 0.21, 0.48, 0.75, 0.94, 1.00 and 0.83.
+
+**Where sources disagree:**
+- **Bright light.** Pozzobon 2022 supports the fitted curve (growth continues at very high light). Choi & Lee 2011 saw stronger losses above 200 µmol/m²/s in batch flasks, closer to a Steele curve. The fitted curve comes from a dedicated light-response study, so it is used.
+- **pH 9.** Choi & Lee report cells dying at pH 9; Rachlin & Grosso's abstract reports slowed, not stopped, growth at 8.3–9.0.
+- **Temperature in a stressed reactor.** Serra-Maia et al. 2016, *Algal Res.* 18:352, doi:10.1016/j.algal.2016.06.016: strain CCAP 211/11B in a bubble-column photobioreactor peaked near 23 °C and stopped growing by 30 °C. The authors attribute this to reactor stress (high oxygen, mortality), since cells in gentler conditions survived 35 °C. Their measured carbon content, 48.5–53 % of dry weight, supports the CO₂ value.
+- **Cross-check, other species.** Bernard & Rémond 2012, doi:10.1016/j.biortech.2012.07.022, fit 5.2 / 38.7 / 45.8 °C for a high-temperature *C. pyrenoidosa* strain.
+
+**Not modelled:** light through a dense culture (Yun & Park 2001, doi:10.1007/s002530100639, has *C. vulgaris* attenuation data).
 - **Illustrative, no source sought:** the carbonate buffer, air-equilibrium pH, heat-stress loss, thermal and instrument values.

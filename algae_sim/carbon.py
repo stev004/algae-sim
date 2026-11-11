@@ -20,8 +20,9 @@ alkalinity. That simplification is acceptable for a control demo, not for
 prediction.
 
 Growth responds to pH with a cardinal pH model (Rosso et al. 1995): 0 at ``ph_min``
-and ``ph_max``, 1 at ``ph_opt``. At high pH the fall-off also stands in for carbon
-limitation, because little dissolved CO2 is left at high pH.
+and ``ph_max``, 1 at ``ph_opt``; values from C. vulgaris data (Choi & Lee 2011).
+At high pH the fall-off also stands in for carbon limitation, because little
+dissolved CO2 is left at high pH.
 """
 
 from __future__ import annotations
@@ -55,16 +56,16 @@ class CarbonParams:
 
 @dataclass(frozen=True, slots=True)
 class PhGrowthParams:
-    """Cardinal pH growth response.
+    """Cardinal pH growth response for C. vulgaris (Choi & Lee 2011).
 
-    ``ph_opt`` matches the C. vulgaris optimum of 7.5-8.0 (Rachlin & Grosso 1991).
-    ``ph_min`` and ``ph_max`` are illustrative, pending a source: the same study
-    reports slowed, not stopped, growth down to pH 3.
+    Measured at pH 3-9: best growth at 7-7.5, still good at 5, cells died at 3 and
+    at 9. Rachlin & Grosso 1991 put the optimum at 7.5-8.0, so 7.5 is where the two
+    agree. At high pH the fall-off also stands in for carbon limitation.
     """
 
-    ph_min: float = 5.5
-    ph_opt: float = 7.8
-    ph_max: float = 10.0
+    ph_min: float = 3.0
+    ph_opt: float = 7.5
+    ph_max: float = 9.0
 
     def __post_init__(self) -> None:
         if not self.ph_min < self.ph_opt < self.ph_max:

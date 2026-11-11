@@ -55,6 +55,18 @@ class TestGrowth:
         assert light_factor(GP.i_opt_umol_m2_s, GP) == pytest.approx(1.0)
         assert light_factor(400.0, GP) < light_factor(200.0, GP) < 1.0
 
+    def test_light_curve_matches_the_fitted_chlorella_data(self):
+        # Schwaderer et al. 2011 "Model 2" with C. vulgaris mu_max 0.94 /day,
+        # alpha 0.040, I_opt 142.1: rewritten as a fraction of mu_max.
+        def model_2(i, mu=0.94, alpha=0.040, i_opt=142.1):
+            denominator = (mu / (alpha * i_opt**2)) * i**2 + (1 - 2 * mu / (alpha * i_opt)) * i
+            return (mu * i / (denominator + mu / alpha)) / mu
+
+        for intensity in (25.0, 100.0, 400.0, 800.0):
+            assert light_factor(intensity, GP) == pytest.approx(model_2(intensity), abs=0.01)
+        # Bright light costs some growth, not most of it (Pozzobon 2022).
+        assert light_factor(400.0, GP) > 0.8
+
     def test_growth_stops_at_carrying_capacity(self):
         rate = net_rate_per_h(GP.carrying_capacity_g_per_l, GP.t_opt_c, GP.i_opt_umol_m2_s, GP)
         assert rate == pytest.approx(-GP.basal_loss_per_h)
