@@ -177,6 +177,10 @@ def _style(plt: Any, theme: dict[str, str]) -> None:
     plt.rcParams.update({
         "font.family": ["Helvetica Neue", "Arial", "DejaVu Sans"],
         "font.size": 10,
+        # Hinting snaps glyph outlines to the pixel grid, which squares off the
+        # curves of Helvetica at chart sizes ("e" reads as a box). Draw the true
+        # outlines instead, at a resolution high enough to stay sharp.
+        "text.hinting": "no_hinting",
         "figure.facecolor": theme["surface"],
         "axes.facecolor": theme["surface"],
         "savefig.facecolor": theme["surface"],
@@ -206,6 +210,7 @@ def _frame(ax: Any, theme: dict[str, str]) -> None:
 
 # Layout is in inches, not figure fractions, so every chart has the same margins
 # and the same gaps between title, subtitle, legend and plot whatever its height.
+DPI = 200  # GitHub scales the PNGs down to the column width, so extra pixels help
 LEFT_IN = 0.22  # left edge of title, subtitle, legend and notes
 TITLE_TOP_IN = 0.2
 SUBTITLE_TOP_IN = 0.56
@@ -234,7 +239,7 @@ def _legend(fig: Any, handles: list[Any], labels: list[str], top_in: float) -> f
     """One row of legend, aligned with the title; return where it ends (inches)."""
     fig.legend(handles, labels, loc="upper left",
                bbox_to_anchor=(_from_left(fig, LEFT_IN - 0.05), _from_top(fig, top_in)),
-               ncols=len(labels), fontsize=9, handletextpad=0.3, columnspacing=1.8,
+               ncols=len(labels), fontsize=9, handletextpad=0.5, columnspacing=1.8,
                borderaxespad=0, borderpad=0, handlelength=1.4)
     return top_in + LINE_IN
 
@@ -472,7 +477,7 @@ def plot(
             ("qc", qc_chart(experiments, theme)),
         ):
             path = output_dir / f"{name}{suffix}.png"
-            fig.savefig(path, dpi=160)
+            fig.savefig(path, dpi=DPI)
             plt.close(fig)
             written.append(path)
     return written
