@@ -41,15 +41,15 @@ uv run python -m algae_sim pipeline upload --capture runs/device/capture --follo
 uv run python -m algae_sim pipeline report --data runs/pipeline
 ```
 
-Message format, schema version 2: `kind` (`environment` | `od`), `device_id` (`<bank>/<reactor>`), `sequence`, `timestamp` (device time, UTC), `context` (command ID, experiment ID, hold number, hours into the hold), `measurements`, plus `control`, `energy_kwh` and `faults` for environment samples. `simulator_truth` is ground truth for tests only.
+Message format, schema version 3: `kind` (`environment` | `od`), `device_id` (`<bank>/<reactor>`), `sequence`, `timestamp` (device time, UTC), `context` (command ID, experiment ID, hold number, hours into the hold), `measurements` (temperature and pH for environment samples), plus `control` (setpoints, heater and CO2 valve state), `energy_kwh`, `co2_g` and `faults` for environment samples. Version 3 added pH and CO2 with culture contract v2; the parser accepts only the current version. `simulator_truth` is ground truth for tests only.
 
 ## Evidence (demo run, 15 experiments × 3 reactors)
 
-- 10,035 messages captured.
-- The uploader started while the ingest was down, buffered about 8,000 lines (the exact number depends on timing) over several failed attempts, then drained them in 21 batches once the ingest came up.
-- A full replay stored 0 new rows and counted 10,035 duplicates.
+- About 10,000 messages captured (10,031 in the latest run, after the contract v2 migration).
+- The uploader started while the ingest was down, buffered about 8,000 lines (the exact number depends on timing) over several failed attempts, then drained them once the ingest came up.
+- A full replay stored 0 new rows and counted every message as a duplicate.
 - Three bad lines were quarantined: an old schema version, a torn write, and an impossible 412 °C reading.
-- The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 5 reactor-2 and hold 14 reactors 1 and 2 (heater faults, off setpoint), and hold 9 reactor-3 (culture crash, OD drop). These are two independent views of the same events.
+- The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 5 reactor-2 and hold 14 reactors 1 and 2 (heater faults, off setpoint), hold 9 reactor-3 (culture crash, OD drop) and hold 11 reactor-1 (CO2 valve stuck open: `protection_trip`, `ph_off_setpoint`). These are two independent views of the same events.
 
 ## Azure version (planned)
 

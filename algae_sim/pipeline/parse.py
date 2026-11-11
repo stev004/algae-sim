@@ -4,7 +4,7 @@ The parser is the pipeline's gatekeeper. Every line either becomes one clean row
 is rejected with a short machine-readable reason, so nothing malformed reaches the
 tables and nothing is silently dropped. Rules:
 
-* only schema version "2" (the device capture format) is accepted;
+* only schema version "3" (the device capture format, with pH and CO2) is accepted;
 * identity (device ID + sequence) and a timezone-aware timestamp are required;
 * values must be the right type and physically plausible for this instrument;
 * ``simulator_truth`` is discarded here: a real device could never report it, so it
@@ -22,8 +22,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-SUPPORTED_SCHEMA_VERSIONS = ("2",)
+SUPPORTED_SCHEMA_VERSIONS = ("3",)
 TEMPERATURE_RANGE_C = (-20.0, 100.0)
+PH_RANGE = (0.0, 14.0)
 OD750_RANGE = (0.0, 10.0)
 
 
@@ -59,6 +60,10 @@ class EnvironmentRow:
     safe_state: bool
     energy_kwh: float
     faults: tuple[str, ...]
+    ph: float | None  # None = the pH probe gave no reading (dropout)
+    ph_setpoint: float
+    co2_valve_open: bool
+    co2_g: float
 
     kind = "environment"
 
@@ -107,6 +112,7 @@ def parse_message(message: dict[str, Any]) -> Row:
         if not isinstance(faults, list) or not all(isinstance(f, str) for f in faults):
             raise Rejected("invalid_field", "faults")
         temperature = measurements.get("temperature_c")
+        ph = measurements.get("ph")
         return EnvironmentRow(
             device_id=device_id,
             sequence=sequence,
@@ -127,6 +133,10 @@ def parse_message(message: dict[str, Any]) -> Row:
             safe_state=_flag(control.get("safe_state"), "safe_state"),
             energy_kwh=_number(message.get("energy_kwh"), "energy_kwh", (0.0, math.inf)),
             faults=tuple(faults),
+            ph=None if ph is None else _number(ph, "ph", PH_RANGE),
+            ph_setpoint=_number(control.get("ph_setpoint"), "ph_setpoint", PH_RANGE),
+            co2_valve_open=_flag(control.get("co2_valve_open"), "co2_valve_open"),
+            co2_g=_number(message.get("co2_g"), "co2_g", (0.0, math.inf)),
         )
     if kind == "od":
         return OdRow(

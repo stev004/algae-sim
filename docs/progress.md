@@ -2,11 +2,21 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-10
+## Current handoff — 2026-11-11
 
-Roadmap item 5 has its local version: a standard-library pipeline from the device capture log, through an uploader and an ingest endpoint, to raw batches and deduplicated SQLite tables, plus a per-hold report. `scripts/pipeline_demo.sh` runs a 15-experiment AutoLab campaign on the device with capture on. It shows outage buffering, draining, a fully deduplicated replay and quarantined bad lines. The pipeline's own flags match AutoLab's QC failures replicate for replicate. 82 tests pass.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f8421`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2, with an illustrative carbon model, a pH probe, a pH controller with low/high trips, and stuck-valve faults. The demo campaign optimises all three variables against OD750, energy and CO2. The pipeline capture format is now schema v3 with pH and CO2. 106 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags still match AutoLab's QC replicate for replicate, including the new CO2-valve fault.
 
-Next: the Azure version, with Steven closely involved (account, region, Data Explorer vs SQL, cost guard and teardown). See [data-pipeline.md](data-pipeline.md). A dashboard and write-up follow once the architecture settles.
+Next: the Azure version of the pipeline, with Steven closely involved (account, region, Data Explorer vs SQL, cost guard and teardown). See [data-pipeline.md](data-pipeline.md). A dashboard and write-up follow once the architecture settles.
+
+## 2026-11-11 — Culture contract v2: pH held by CO2
+
+- **Decision (agreed with the AutoLab session and Steven):** pH is held by the device, not set independently. The optimiser chooses a pH setpoint; CO2 used is a measured consumption, like energy. Nitrate, dissolved O2 and stirring are out of scope.
+- **Decision:** the device manifest is the single source of truth for variable names, units, ranges, resolution, protection limits and resources. AutoLab only intersects them with its policy. The table lives once in `device/core.py` and both adapters convert from it.
+- **Decision:** a command must name exactly the device's variables. Unknown and missing names are both refused by the firmware, not the adapter, so the refusal is the device's own.
+- **Decision:** the carbon model is one lumped buffer coefficient plus gas exchange towards an air-equilibrium pH (8.6). Gas exchange is what makes low pH cost CO2, giving the optimiser a real trade-off. pH_air is set above the campaign's range so every campaign setpoint is holdable; at 9.0 a young culture can't be held up, which QC correctly rejects.
+- **Decision:** the low-pH trip closes a separate supply shutoff, so protection still works when the dosing valve itself is stuck open. A high-pH trip is an alarm only, as there's no base dosing.
+- **Decision:** pickled device state is versioned; older state files are refused rather than misread. The capture schema went to v3 and the parser accepts only v3, since the local pipeline holds no data worth migrating.
+- Fault-injection demo gained experiment 11: reactor-1's CO2 valve sticks open, the device trips on low pH, and AutoLab stops and rejects that replicate while 2 of 3 still pass.
 
 ## 2026-11-10 — Local data pipeline
 

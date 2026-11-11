@@ -5,7 +5,7 @@
 ```text
  AutoLab (separate repo, installed as a pinned dependency)
  ┌──────────────────────────────────────────────────────────┐
- │ OptunaStrategy.ask() ──▶ proposal {setpoint, light}       │
+ │ OptunaStrategy.ask() ──▶ proposal {temperature, light, pH}│
  │        ▲                                                  │
  │ tell(observation | QC_FAILED)                             │
  └────────┼─────────────────────────────┬────────────────────┘
@@ -15,8 +15,9 @@
           ▲              (calibrated, mock-flagged evidence)        │ reads
           │ energy, trips, measured temps                           ▼
  algae_sim (standard library only) — the "device"
-   true state ─▶ TemperatureSensor ─▶ HysteresisController ─▶ Heater ─▶ true state
-   (hidden)        noise/dropouts       fail-safe, trip          may fail
+   true state ─▶ TemperatureSensor ─▶ HysteresisController ─▶ Heater ──▶ true state
+   (hidden)  └──▶ PhSensor ─────────▶ PhController ─────────▶ CO2 valve ┘
+                   noise/dropouts       fail-safe, trips         may stick
           └──▶ OpticalDensitySensor ─▶ capture log ─▶ data pipeline (local; Azure planned)
 ```
 
@@ -27,17 +28,18 @@
 - **Measurement seam.** The adapter implements AutoLab's `ReadOnlySensor` (open → self-test → read, with calibration checks) and is found through the `autonomous_lab.sensor_adapters` entry point. AutoLab needs no code changes. Evidence is flagged `is_mock=True` because no hardware ran.
 - **QC before learning.** A batch whose measured temperature drifted from the setpoint, tripped protection, or saturated the OD sensor is reported as `QC_FAILED` and never becomes an optimiser observation.
 
-## Full AutoLab culture campaigns (stage 6)
+## Full AutoLab culture campaigns (stage 6, culture contract v2)
 
 `algae_sim/autolab/controller.py` implements AutoLab's `CultureEnvironmentController`. It's registered as `algae-sim-reactor` in the `autonomous_lab.culture_controllers` entry-point group and also provides `IntegratedCultureSensor`. AutoLab owns the experiment: it proposes, compiles and validates, issues a receipt, sends one `SetpointCommand`, then sleeps on its clock while polling telemetry and OD750 readings. It always requests safe state at the end, runs eight culture QC checks, and persists everything.
 
 The adapter owns the device:
-- It re-checks its own limits (20–36 °C, because there's no cooling, and 0–500 µmol/m²/s light).
+- Its manifest declares the **controlled variables** with units, ranges, resolution and whether each is measured: `temperature` 20–36 °C (no cooling), `light_intensity` 0–500 µmol/m²/s, `ph` 6.0–9.0. It also declares **protection limits** (39 °C; pH 5.5 and 9.8) and metered **resources** (`energy` in kWh, `co2` in g). AutoLab reads these rather than assuming them. The table lives once, in `device/core.py`.
+- A command must name exactly those variables: unknown ones are refused (`unknown_variable`), and so are missing ones (`missing_variable`), because the device has nothing to hold a missing one at. It re-checks every range itself.
 - Each accepted command starts a fresh batch, simulating re-inoculation.
-- It reports applied values, measured temperature, trips, faults and cumulative energy. It never reports true state.
-- Safe state turns the heater and lights off.
+- Telemetry reports `applied`, `measured` (temperature and pH; `None` is a probe dropout) and `consumption` (cumulative since the command) dicts, plus trips and faults. Trip faults name the limit: `over_temperature_trip`, `ph_low_trip`, `ph_high_trip`. It never reports true state.
+- Safe state turns the heater and lights off and shuts off the CO₂; pH keeps reporting.
 
-**Replicates and faults.** AutoLab sends one setpoint command per replicate reactor (three by default). Each reactor counts its own holds, and its seed comes from the experiment ID plus the reactor ID, so replicates differ realistically but repeatably. `heater_faults` and `culture_crashes` in `settings` map reactor → hold numbers, so a fault can hit exactly one replicate of one experiment.
+**Replicates and faults.** AutoLab sends one setpoint command per replicate reactor (three by default). Each reactor counts its own holds, and its seed comes from the experiment ID plus the reactor ID, so replicates differ realistically but repeatably. `heater_faults`, `culture_crashes` and `co2_valve_faults` in `settings` map reactor → hold numbers, so a fault can hit exactly one replicate of one experiment.
 
 **Resume.** Telemetry reports `active_command_id` (cleared at safe state). The simulated reactors live inside the AutoLab process, so if AutoLab restarts they're gone. A resume then finds no matching command and AutoLab safely ends the hold as `hold_interrupted`. That's the correct, conservative outcome; persisting the simulated device between processes would be needed to show a successful resume.
 
@@ -68,7 +70,7 @@ Every reading and telemetry sample is stamped with device time.
 - *Persistent silence*: the adapter raises an ambiguous `ControllerError`, which AutoLab never retries and handles by going to safe state.
 - An unconfirmed safe state is always reported as ambiguous.
 
-**Persistence and resume.** The service pickles its firmware state after every command and about once a second, written atomically. Restarting the service resumes from the saved state. If AutoLab crashes, the device keeps holding. On restart, AutoLab reads `active_command_id` from each reactor, confirms the hold, and continues the schedule. Readings whose windows passed during the outage are recorded as missing, and QC judges whether enough of the hold was observed.
+**Persistence and resume.** The service pickles its firmware state after every command and about once a second, written atomically. The state carries a version; a file from older firmware is refused with a clear message rather than misread. Restarting the service resumes from the saved state. If AutoLab crashes, the device keeps holding. On restart, AutoLab reads `active_command_id` from each reactor, confirms the hold, and continues the schedule. Readings whose windows passed during the outage are recorded as missing, and QC judges whether enough of the hold was observed.
 
 **Cost of realism.** Over HTTP an experiment takes about 1 s in lockstep, against about 0.5 s in-process. At high paced speeds, a few real seconds of AutoLab restart become hours of culture time, so the resume demo relaxes telemetry coverage to 75% and reports the gap it actually saw. The service listens on 127.0.0.1 with no authentication: it's for one local machine.
 

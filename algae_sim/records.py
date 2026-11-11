@@ -31,6 +31,12 @@ class TelemetrySample:
     controller_tripped: bool
     true_temperature_c: float
     true_biomass_g_per_l: float
+    measured_ph: float | None = None
+    ph_setpoint: float | None = None
+    co2_valve_open: bool = False
+    co2_g: float = 0.0
+    ph_tripped: bool = False
+    true_ph: float | None = None
 
     def to_message(self, device_id: str, start_time: datetime) -> dict[str, Any]:
         return {
@@ -41,6 +47,8 @@ class TelemetrySample:
             "measurements": {
                 "temperature_c": self.measured_temperature_c,
                 "od750": self.measured_od750,
+                "ph": self.measured_ph,
+                "co2_g": self.co2_g,  # cumulative CO2 dosed this batch
             },
             "control": {
                 "temperature_setpoint_c": self.temperature_setpoint_c,
@@ -48,10 +56,14 @@ class TelemetrySample:
                 "heater_applied": self.heater_applied,
                 "light_umol_m2_s": self.light_umol_m2_s,
                 "tripped": self.controller_tripped,
+                "ph_setpoint": self.ph_setpoint,
+                "co2_valve_open": self.co2_valve_open,
+                "ph_tripped": self.ph_tripped,
             },
             "simulator_truth": {
                 "temperature_c": self.true_temperature_c,
                 "biomass_g_per_l": self.true_biomass_g_per_l,
+                "ph": self.true_ph,
             },
         }
 

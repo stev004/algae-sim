@@ -11,7 +11,8 @@ sleeps on its clock, polls telemetry and reads OD750. Before answering anything,
 adapter advances the device clock to AutoLab's ``clock.now()``, so with AutoLab's
 ``SteppedClock`` a 36 h hold takes milliseconds. The firmware re-checks its own
 limits, acknowledges applied values, reports only attested telemetry (including the
-command it holds), and owns its thermostat, fail-safe and over-temperature trip.
+command it holds), and owns its thermostat, its pH controller (CO2 dosing) and its
+protection trips.
 
 The adapter does not choose experiments or read objectives or optimiser state.
 """
@@ -79,7 +80,7 @@ class SimulatedReactorController:
     async def apply_setpoints(self, command: SetpointCommand) -> SetpointAcknowledgement:
         self._sync()
         try:
-            fields = convert.command_fields(command)
+            fields = convert.command_fields(command, self.core.manifest())
         except ValueError as exc:
             return SetpointAcknowledgement(
                 command_id=command.command_id,
@@ -90,11 +91,13 @@ class SimulatedReactorController:
                 rejection_message=str(exc),
                 acknowledged_at=self.core.now,
             )
-        return convert.acknowledgement(self._controller_id, self.core.apply_setpoints(**fields))
+        ack = self.core.apply_setpoints(**fields)
+        return convert.acknowledgement(self._controller_id, ack, self.core.manifest())
 
     async def read_telemetry(self, reactor_id: str) -> EnvironmentTelemetry:
         self._sync()
-        return convert.telemetry(self._controller_id, self._call(self.core.telemetry, reactor_id))
+        sample = self._call(self.core.telemetry, reactor_id)
+        return convert.telemetry(self._controller_id, sample, self.core.manifest())
 
     async def enter_safe_state(self, reactor_id: str, reason: str) -> SafeStateAcknowledgement:
         self._sync()

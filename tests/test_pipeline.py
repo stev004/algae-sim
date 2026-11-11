@@ -23,10 +23,10 @@ def capturing_core(**settings) -> DeviceCore:
     return core
 
 
-def start_hold(core, reactor="reactor-1", setpoint=30.0, light=150.0, n=0):
+def start_hold(core, reactor="reactor-1", setpoint=30.0, light=150.0, ph=7.5, n=0):
     return core.apply_setpoints(
         command_id=f"cmd-{reactor}-{n}", experiment_id=f"exp-{n}", reactor_id=reactor,
-        temperature_c=setpoint, light_umol_m2_s=light,
+        setpoints={"temperature": setpoint, "light_intensity": light, "ph": ph},
     )
 
 
@@ -84,7 +84,8 @@ def test_capture_is_off_by_default():
 def test_service_writes_the_capture_log_and_repairs_a_torn_line(tmp_path):
     service = DeviceService(DeviceSettings(), capture_dir=tmp_path, start_time=START)
     service.handle("POST", "/v1/reactors/reactor-1/setpoints", {
-        "command_id": "c1", "experiment_id": "e1", "temperature_c": 30, "light_umol_m2_s": 150,
+        "command_id": "c1", "experiment_id": "e1",
+        "setpoints": {"temperature": 30, "light_intensity": 150, "ph": 7.5},
     })
     service.handle("POST", "/v1/clock/advance", {"to": (START + timedelta(hours=1)).isoformat()})
     log = tmp_path / CAPTURE_FILE
@@ -92,7 +93,7 @@ def test_service_writes_the_capture_log_and_repairs_a_torn_line(tmp_path):
     assert len(lines) == 7 and all(parse_line(line) for line in lines)
 
     with log.open("a") as handle:
-        handle.write('{"schema_version": "2", "kind": "envir')  # crash mid-write
+        handle.write('{"schema_version": "3", "kind": "envir')  # crash mid-write
     DeviceService(DeviceSettings(), capture_dir=tmp_path, start_time=START)
     assert log.read_text().endswith('"envir\n')  # torn line ended; next write starts clean
 
@@ -104,6 +105,8 @@ def test_parser_accepts_device_messages_and_drops_simulator_truth():
     rows = [parse_line(line) for line in captured_lines()]
     assert isinstance(rows[0], EnvironmentRow) and isinstance(rows[-1], OdRow)
     assert rows[0].context.command_id == "cmd-reactor-1-0"
+    assert rows[0].ph_setpoint == 7.5 and rows[1].ph == pytest.approx(7.5, abs=0.05)
+    assert rows[-2].co2_g >= rows[1].co2_g >= 0
     assert not hasattr(rows[0], "simulator_truth")
     assert "truth" not in " ".join(EnvironmentRow.__slots__ + OdRow.__slots__)
 
@@ -113,13 +116,16 @@ def test_parser_accepts_device_messages_and_drops_simulator_truth():
     [
         (lambda m: "not json at all", "invalid_json"),
         (lambda m: [m], "not_an_object"),
-        (lambda m: {**m, "schema_version": "1"}, "unsupported_schema_version"),
+        (lambda m: {**m, "schema_version": "2"}, "unsupported_schema_version"),
         (lambda m: {**m, "sequence": True}, "invalid_sequence"),
         (lambda m: {**m, "sequence": -1}, "invalid_sequence"),
         (lambda m: {**m, "timestamp": "2026-11-01T08:00:00"}, "invalid_timestamp"),
         (lambda m: {k: v for k, v in m.items() if k != "device_id"}, "missing_field"),
         (lambda m: {**m, "measurements": {"temperature_c": 412.0}}, "implausible_value"),
         (lambda m: {**m, "measurements": {"temperature_c": "hot"}}, "invalid_field"),
+        (lambda m: {**m, "measurements": {"temperature_c": 30.0, "ph": 15.0}},
+         "implausible_value"),
+        (lambda m: {**m, "co2_g": -1.0}, "implausible_value"),
         (lambda m: {**m, "energy_kwh": float("nan")}, "invalid_field"),
         (lambda m: {**m, "kind": "pressure"}, "unknown_kind"),
     ],
@@ -266,3 +272,30 @@ def test_analysis_flags_the_replicate_whose_heater_failed(tmp_path):
     health = report(tmp_path)["pipeline"]
     assert health["devices"] == ["bank/reactor-1", "bank/reactor-2", "bank/reactor-3"]
     assert health["duplicates_dropped"] == 0
+
+
+def test_analysis_flags_ph_faults_and_meters_co2(tmp_path):
+    # reactor-1's valve sticks open (overdose), reactor-2's sticks closed (no CO2).
+    core = capturing_core(co2_valve_faults={"reactor-1": (0,)}, co2_valve_fault_after_h=2.0)
+    stuck_closed = capturing_core(
+        co2_valve_faults={"reactor-2": (0,)},
+        co2_valve_fault_mode="closed",
+        co2_valve_fault_after_h=2.0,
+    )
+    for device in (core, stuck_closed):
+        for reactor in ("reactor-1", "reactor-2", "reactor-3"):
+            start_hold(device, reactor=reactor, ph=6.8)
+        device.advance_to(START + timedelta(hours=24))
+    service = IngestService(tmp_path)
+    service.ingest("".join(json.dumps(m) + "\n" for m in core.drain_outbox()).encode())
+    summaries = {s.device_id: s for s in hold_summaries(service.db.connection)}
+    closed = IngestService(tmp_path / "closed")
+    closed.ingest("".join(json.dumps(m) + "\n" for m in stuck_closed.drain_outbox()).encode())
+    closed_summaries = {s.device_id: s for s in hold_summaries(closed.db.connection)}
+
+    assert "protection_trip" in summaries["bank/reactor-1"].flags
+    assert "ph_low_trip" in summaries["bank/reactor-1"].faults
+    assert "ph_off_setpoint" in closed_summaries["bank/reactor-2"].flags
+    healthy = summaries["bank/reactor-3"]
+    assert healthy.flags == [] and healthy.mean_abs_ph_deviation < 0.05
+    assert closed_summaries["bank/reactor-2"].co2_g < healthy.co2_g

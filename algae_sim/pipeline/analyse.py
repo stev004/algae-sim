@@ -25,6 +25,7 @@ from pathlib import Path
 
 WARMUP_H = 3.0
 MAX_MEAN_DEVIATION_C = 1.0
+MAX_MEAN_PH_DEVIATION = 0.2
 MAX_MISSING_FRACTION = 0.2
 MAX_OD_DROP = 0.05
 EXPECTED_SAMPLE_GAP_H = 10 / 60
@@ -38,12 +39,16 @@ class HoldSummary:
     hold_number: int | None
     setpoint_c: float
     light_umol_m2_s: float
+    ph_setpoint: float
     hours_held: float
     samples: int
     missing_temperature: int
     mean_abs_deviation_c: float | None
     max_temperature_c: float | None
+    mean_abs_ph_deviation: float | None
+    missing_ph: int
     energy_kwh: float
+    co2_g: float
     od_readings: int
     od_first: float | None
     od_last: float | None
@@ -59,7 +64,8 @@ def hold_summaries(db: sqlite3.Connection) -> list[HoldSummary]:
     for row in db.execute(
         "select device_id, command_id, experiment_id, hold_number, hold_elapsed_h, "
         "temperature_c, setpoint_c, light_umol_m2_s, tripped, safe_state, energy_kwh, "
-        "faults, timestamp from environment order by device_id, sequence"
+        "faults, timestamp, ph, ph_setpoint, co2_g from environment "
+        "order by device_id, sequence"
     ):
         env.setdefault((row[0], row[1]), []).append(row)
     od: dict[tuple[str, str], list[tuple[float, float]]] = {}
@@ -76,6 +82,10 @@ def hold_summaries(db: sqlite3.Connection) -> list[HoldSummary]:
             continue
         temps = [r[5] for r in active if r[5] is not None]
         settled = [abs(r[5] - r[6]) for r in active if r[5] is not None and r[4] >= WARMUP_H]
+        phs = [r[13] for r in active if r[13] is not None]
+        ph_settled = [
+            abs(r[13] - r[14]) for r in active if r[13] is not None and r[4] >= WARMUP_H
+        ]
         times = [datetime.fromisoformat(r[12]) for r in rows]
         gaps = [(b - a).total_seconds() / 3600 for a, b in pairwise(times)]
         faults = sorted({f for r in active for f in json.loads(r[11])})
@@ -88,12 +98,16 @@ def hold_summaries(db: sqlite3.Connection) -> list[HoldSummary]:
             hold_number=rows[0][3],
             setpoint_c=active[0][6],
             light_umol_m2_s=active[0][7],
+            ph_setpoint=active[0][14],
             hours_held=active[-1][4],
             samples=len(active),
             missing_temperature=len(active) - len(temps),
             mean_abs_deviation_c=_mean(settled),
             max_temperature_c=max(temps) if temps else None,
+            mean_abs_ph_deviation=_mean(ph_settled),
+            missing_ph=len(active) - len(phs),
             energy_kwh=max(r[10] for r in active),
+            co2_g=max(r[15] for r in active),
             od_readings=len(readings),
             od_first=readings[0][1] if readings else None,
             od_last=readings[-1][1] if readings else None,
@@ -126,10 +140,14 @@ def _flags(s: HoldSummary, tripped: bool) -> list[str]:
     flags = []
     if s.mean_abs_deviation_c is not None and s.mean_abs_deviation_c > MAX_MEAN_DEVIATION_C:
         flags.append("temperature_off_setpoint")
+    if s.mean_abs_ph_deviation is not None and s.mean_abs_ph_deviation > MAX_MEAN_PH_DEVIATION:
+        flags.append("ph_off_setpoint")
     if tripped:
         flags.append("protection_trip")
     if s.samples and s.missing_temperature / s.samples > MAX_MISSING_FRACTION:
         flags.append("temperature_dropouts")
+    if s.samples and s.missing_ph / s.samples > MAX_MISSING_FRACTION:
+        flags.append("ph_dropouts")
     if s.largest_od_drop > MAX_OD_DROP:
         flags.append("od_drop")
     if s.longest_capture_gap_h > EXPECTED_SAMPLE_GAP_H * 1.5:
@@ -186,17 +204,22 @@ def format_report(data: dict[str, object]) -> str:
     out += [
         "",
         "Culture holds (from stored data only)",
-        "  hold  reactor    setpoint  light  dev°C  kWh    OD start→end  µ/h     flags",
+        "  hold  reactor    °C     light  pH    dev°C  devpH  kWh    CO2 g  "
+        "OD start→end  µ/h     flags",
     ]
     for h in data["holds"]:
         dev = "  -  " if h["mean_abs_deviation_c"] is None else f"{h['mean_abs_deviation_c']:5.2f}"
+        dev_ph = (
+            "  -  " if h["mean_abs_ph_deviation"] is None else f"{h['mean_abs_ph_deviation']:5.2f}"
+        )
         od = ("     -     " if h["od_first"] is None
               else f"{h['od_first']:.3f}→{h['od_last']:.3f}")
         mu = "   -  " if h["growth_rate_per_h"] is None else f"{h['growth_rate_per_h']:.3f}"
         flags = ", ".join(h["flags"]) or "ok"
         out.append(
             f"  {h['hold_number'] if h['hold_number'] is not None else '?':>4}  "
-            f"{h['device_id'].rsplit('/', 1)[-1]:9s}  {h['setpoint_c']:6.1f}  "
-            f"{h['light_umol_m2_s']:6.0f}  {dev}  {h['energy_kwh']:.3f}  {od}  {mu}  {flags}"
+            f"{h['device_id'].rsplit('/', 1)[-1]:9s}  {h['setpoint_c']:5.1f}  "
+            f"{h['light_umol_m2_s']:5.0f}  {h['ph_setpoint']:4.2f}  {dev}  {dev_ph}  "
+            f"{h['energy_kwh']:.3f}  {h['co2_g']:5.1f}  {od}  {mu}  {flags}"
         )
     return "\n".join(out)

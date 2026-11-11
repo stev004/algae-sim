@@ -29,7 +29,8 @@ API (JSON bodies; errors are ``{"error": code, "message": text}``):
     GET  /v1/manifest                    capabilities and calibration
     GET  /v1/clock                       device time and mode
     POST /v1/clock/advance   {to}        lockstep only
-    POST /v1/reactors/<id>/setpoints  {command_id, experiment_id, temperature_c, light_umol_m2_s}
+    POST /v1/reactors/<id>/setpoints  {command_id, experiment_id, setpoints: {name: value}}
+                                         (names and units: the manifest's controlled_variables)
     GET  /v1/reactors/<id>/telemetry
     POST /v1/reactors/<id>/safe-state {reason}
     GET  /v1/reactors/<id>/od
@@ -49,7 +50,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from algae_sim.device.core import DeviceCore, DeviceError, DeviceSettings
+from algae_sim.device.core import STATE_VERSION, DeviceCore, DeviceError, DeviceSettings
 
 STATE_FILE = "device.pickle"
 CAPTURE_FILE = "telemetry.jsonl"
@@ -87,6 +88,12 @@ class DeviceService:
             # Our own state file, written by this service; never load untrusted pickles.
             with self.state_path.open("rb") as handle:
                 self.core: DeviceCore = pickle.load(handle)
+            found = getattr(self.core, "state_version", 1)
+            if found != STATE_VERSION:
+                raise RuntimeError(
+                    f"{self.state_path} was written by older firmware (state version {found}, "
+                    f"need {STATE_VERSION}); delete it or use a fresh --state directory"
+                )
             self.restored = True
         else:
             self.core = DeviceCore(settings, start_time=start_time or datetime.now(UTC))
@@ -221,8 +228,7 @@ class DeviceService:
                 command_id=_text(body, "command_id"),
                 experiment_id=_text(body, "experiment_id"),
                 reactor_id=reactor_id,
-                temperature_c=_number(body, "temperature_c"),
-                light_umol_m2_s=_number(body, "light_umol_m2_s"),
+                setpoints=_setpoints(body),
             )
             self.persist()
             return ack
@@ -266,11 +272,17 @@ def _text(body: dict[str, Any], key: str) -> str:
     return value
 
 
-def _number(body: dict[str, Any], key: str) -> float:
-    value = body.get(key)
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise DeviceError("bad_request", f"{key} must be a number")
-    return float(value)
+def _setpoints(body: dict[str, Any]) -> dict[str, float]:
+    """Shape check only; which names are allowed is the firmware's decision."""
+    raw = body.get("setpoints")
+    if not isinstance(raw, dict) or not raw:
+        raise DeviceError("bad_request", "setpoints must be an object of name: number")
+    values = {}
+    for name, value in raw.items():
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise DeviceError("bad_request", f"setpoint {name!r} must be a number")
+        values[str(name)] = float(value)
+    return values
 
 
 def make_handler(service: DeviceService) -> type[BaseHTTPRequestHandler]:

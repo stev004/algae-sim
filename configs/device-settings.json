@@ -20,5 +20,12 @@
       9
     ]
   },
-  "culture_crash_after_h": 12.0
+  "culture_crash_after_h": 12.0,
+  "co2_valve_faults": {
+    "reactor-1": [
+      11
+    ]
+  },
+  "co2_valve_fault_mode": "open",
+  "co2_valve_fault_after_h": 4.0
 }

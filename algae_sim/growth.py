@@ -1,10 +1,12 @@
 """Educational microalgae growth model. NOT validated; do not use for prediction.
 
-    dX/dt = mu_max * f_T(T) * f_I(I) * X * (1 - X / X_max) - loss(T) * X
+    dX/dt = mu_max * f_T(T) * f_I(I) * f_pH * X * (1 - X / X_max) - loss(T) * X
 
 * f_T: cardinal temperature model with inflection (Rosso et al. 1993), 0 outside
   [t_min, t_max], 1 at t_opt.
 * f_I: Steele photoinhibition curve, peaks at i_opt and declines above it.
+* f_pH: the pH response, passed in as ``ph_response`` (see ``algae_sim.carbon``);
+  1.0 means pH is not modelled.
 * logistic term: crude stand-in for self-shading and nutrient limits.
 * loss: basal maintenance/death, plus heat stress above t_max.
 
@@ -57,20 +59,37 @@ def light_factor(intensity_umol_m2_s: float, p: GrowthParams) -> float:
     return ratio * math.exp(1.0 - ratio)
 
 
+def gross_rate_per_h(
+    biomass_g_per_l: float,
+    temperature_c: float,
+    intensity_umol_m2_s: float,
+    p: GrowthParams,
+    ph_response: float = 1.0,
+) -> float:
+    """Specific growth rate before losses (1/h). Negative only above carrying capacity.
+
+    Kept separate from the losses because the carbon model needs gross production:
+    that is what takes CO2 out of the medium.
+    """
+    crowding = 1.0 - biomass_g_per_l / p.carrying_capacity_g_per_l
+    return (
+        p.mu_max_per_h
+        * temperature_factor(temperature_c, p)
+        * light_factor(intensity_umol_m2_s, p)
+        * ph_response
+        * crowding
+    )
+
+
 def net_rate_per_h(
     biomass_g_per_l: float,
     temperature_c: float,
     intensity_umol_m2_s: float,
     p: GrowthParams,
+    ph_response: float = 1.0,
 ) -> float:
     """Net specific growth rate (1/h) at the current state; may be negative."""
-    crowding = 1.0 - biomass_g_per_l / p.carrying_capacity_g_per_l
-    growth = (
-        p.mu_max_per_h
-        * temperature_factor(temperature_c, p)
-        * light_factor(intensity_umol_m2_s, p)
-        * crowding
-    )
+    growth = gross_rate_per_h(biomass_g_per_l, temperature_c, intensity_umol_m2_s, p, ph_response)
     loss = p.basal_loss_per_h + p.heat_stress_loss_per_h_per_c * max(
         0.0, temperature_c - p.t_max_c
     )
@@ -83,7 +102,8 @@ def step_biomass(
     intensity_umol_m2_s: float,
     p: GrowthParams,
     dt_s: float,
+    ph_response: float = 1.0,
 ) -> float:
     """Advance true biomass one forward-Euler step; never returns a negative value."""
-    rate = net_rate_per_h(biomass_g_per_l, temperature_c, intensity_umol_m2_s, p)
+    rate = net_rate_per_h(biomass_g_per_l, temperature_c, intensity_umol_m2_s, p, ph_response)
     return max(0.0, biomass_g_per_l * (1.0 + rate * dt_s / 3600.0))

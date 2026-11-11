@@ -2,10 +2,13 @@
 
 Each step of length ``dt_s``:
 
-1. the temperature sensor reads the hidden true temperature;
-2. the controller decides a heater command from that measurement only;
-3. the heater applies the command (or not, if it has failed);
-4. the true temperature and biomass advance using the *applied* heater state.
+1. the temperature and pH probes read the hidden true state;
+2. the thermostat and the pH controller decide from those measurements only;
+3. the heater and the CO2 valve apply their commands (or not, if they have failed);
+4. true temperature, biomass and pH advance using the *applied* actuator state.
+
+pH is held by dosing CO2 (``algae_sim.carbon``). The medium is assumed to be
+prepared at the pH setpoint when the culture is inoculated (illustrative).
 """
 
 from __future__ import annotations
@@ -15,9 +18,16 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from algae_sim.control import HysteresisController
-from algae_sim.growth import GrowthParams, step_biomass
-from algae_sim.instruments import Heater, OpticalDensitySensor, TemperatureSensor
+from algae_sim.carbon import CarbonParams, PhGrowthParams, ph_factor, step_ph
+from algae_sim.control import HysteresisController, PhController
+from algae_sim.growth import GrowthParams, gross_rate_per_h, step_biomass
+from algae_sim.instruments import (
+    Co2Valve,
+    Heater,
+    OpticalDensitySensor,
+    PhSensor,
+    TemperatureSensor,
+)
 from algae_sim.records import TelemetrySample
 from algae_sim.thermal import ThermalParams, step_temperature
 
@@ -29,6 +39,8 @@ LIGHT_WATTS_PER_UMOL_M2_S = 0.2  # illustrative LED panel efficiency
 class ReactorConfig:
     temperature_setpoint_c: float = 30.0
     light_umol_m2_s: float = 150.0
+    ph_setpoint: float = 7.5
+    start_ph: float | None = None  # None: medium prepared at the pH setpoint
     batch_hours: float = 36.0
     ambient_c: float = 20.0
     start_temperature_c: float = 20.0
@@ -40,11 +52,17 @@ class ReactorConfig:
     heater_fails_after_h: float | None = None
     temperature_dropout_probability: float = 0.0
     temperature_sensor_offset_c: float = 0.0
+    ph_dropout_probability: float = 0.0
+    ph_sensor_offset: float = 0.0
+    co2_valve_sticks: str | None = None  # "open" or "closed"
+    co2_valve_sticks_after_h: float = 0.0
     # Culture crash (e.g. contamination by grazers): biomass is lost from this hour.
     culture_crash_after_h: float | None = None
     culture_crash_loss_per_h: float = 0.15
     thermal: ThermalParams = field(default_factory=ThermalParams)
     growth: GrowthParams = field(default_factory=GrowthParams)
+    carbon: CarbonParams = field(default_factory=CarbonParams)
+    ph_growth: PhGrowthParams = field(default_factory=PhGrowthParams)
 
     def __post_init__(self) -> None:
         if self.batch_hours <= 0:
@@ -55,6 +73,8 @@ class ReactorConfig:
             raise ValueError("telemetry_interval_s must be at least dt_s")
         if self.light_umol_m2_s < 0:
             raise ValueError("light must be non-negative")
+        if self.co2_valve_sticks not in (None, "open", "closed"):
+            raise ValueError("co2_valve_sticks must be None, 'open' or 'closed'")
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -71,6 +91,9 @@ class BatchResult:
     trip_count: int
     missing_temperature_readings: int
     max_true_temperature_c: float
+    co2_g: float = 0.0
+    ph_trip_count: int = 0
+    missing_ph_readings: int = 0
 
     @property
     def total_energy_wh(self) -> float:
@@ -86,6 +109,9 @@ class BatchResult:
             "trip_count": self.trip_count,
             "missing_temperature_readings": self.missing_temperature_readings,
             "max_true_temperature_c": round(self.max_true_temperature_c, 3),
+            "co2_g": round(self.co2_g, 3),
+            "ph_trip_count": self.ph_trip_count,
+            "missing_ph_readings": self.missing_ph_readings,
         }
 
 
@@ -99,8 +125,16 @@ class Reactor:
             rng=random.Random(rng.getrandbits(32)),
         )
         self.od_sensor = OpticalDensitySensor(rng=random.Random(rng.getrandbits(32)))
+        # Drawn after the existing instruments so their noise streams are unchanged.
+        self.ph_sensor = PhSensor(
+            offset=config.ph_sensor_offset,
+            dropout_probability=config.ph_dropout_probability,
+            rng=random.Random(rng.getrandbits(32)),
+        )
         self.heater = Heater()
+        self.co2_valve = Co2Valve()
         self.controller = HysteresisController(setpoint_c=config.temperature_setpoint_c)
+        self.ph_controller = PhController(setpoint=config.ph_setpoint)
         # True state: only the simulator may read these directly.
         self.elapsed_s = 0.0
         self.true_temperature_c = config.start_temperature_c
@@ -108,30 +142,61 @@ class Reactor:
         self.light_umol_m2_s = config.light_umol_m2_s
         self.heater_energy_wh = 0.0
         self.light_energy_wh = 0.0
+        self.true_ph = config.ph_setpoint if config.start_ph is None else config.start_ph
+        self.co2_dosed_g = 0.0
         # Safe state: heater forced off and lights off, whatever the controller wants.
         self.safe_state = False
         self.max_true_temperature_c = config.start_temperature_c
         self.last_measured_c: float | None = None
         self.last_command = 0.0
         self.last_applied = 0.0
+        self.last_measured_ph: float | None = None
+        self.last_valve_command = False
+        self.last_valve_open = False
 
     def step(self) -> None:
         cfg = self.config
         fails_at = cfg.heater_fails_after_h
         if fails_at is not None and self.elapsed_s >= fails_at * 3600:
             self.heater.failed = True
+        if cfg.co2_valve_sticks and self.elapsed_s >= cfg.co2_valve_sticks_after_h * 3600:
+            self.co2_valve.stuck = cfg.co2_valve_sticks
         self.last_measured_c = self.temperature_sensor.read(self.true_temperature_c)
         decided = self.controller.decide(self.last_measured_c)
         self.last_command = 0.0 if self.safe_state else decided
         self.last_applied = self.heater.apply(self.last_command)
+        self.last_measured_ph = self.ph_sensor.read(self.true_ph)
+        wants_co2 = self.ph_controller.decide(self.last_measured_ph)
+        self.last_valve_command = wants_co2 and not self.safe_state
+        # Safe state closes the supply shutoff, like the low-pH trip does.
+        self.last_valve_open = self.co2_valve.apply(
+            self.last_valve_command,
+            shutoff_closed=self.safe_state or self.ph_controller.shutoff_closed,
+        )
         light = 0.0 if self.safe_state else self.light_umol_m2_s
-        # Growth uses the temperature at the start of the step (explicit Euler).
+        # Growth uses the state at the start of the step (explicit Euler).
+        ph_response = ph_factor(self.true_ph, cfg.ph_growth)
+        gross = gross_rate_per_h(
+            self.true_biomass_g_per_l, self.true_temperature_c, light, cfg.growth, ph_response
+        )
+        produced_g_per_l = max(0.0, gross) * self.true_biomass_g_per_l * cfg.dt_s / 3600
         self.true_biomass_g_per_l = step_biomass(
             self.true_biomass_g_per_l,
             self.true_temperature_c,
             light,
             cfg.growth,
             cfg.dt_s,
+            ph_response,
+        )
+        carbon = cfg.carbon
+        dosed_g = carbon.valve_flow_g_per_h * cfg.dt_s / 3600 if self.last_valve_open else 0.0
+        self.co2_dosed_g += dosed_g
+        self.true_ph = step_ph(
+            self.true_ph,
+            co2_dosed_g=dosed_g,
+            co2_fixed_g=produced_g_per_l * carbon.volume_l * carbon.co2_per_g_biomass,
+            p=carbon,
+            dt_s=cfg.dt_s,
         )
         crash_at = cfg.culture_crash_after_h
         if crash_at is not None and self.elapsed_s >= crash_at * 3600:
@@ -168,6 +233,12 @@ class Reactor:
             controller_tripped=self.controller.tripped,
             true_temperature_c=self.true_temperature_c,
             true_biomass_g_per_l=self.true_biomass_g_per_l,
+            measured_ph=self.last_measured_ph,
+            ph_setpoint=self.config.ph_setpoint,
+            co2_valve_open=self.last_valve_open,
+            co2_g=self.co2_dosed_g,
+            ph_tripped=self.ph_controller.tripped,
+            true_ph=self.true_ph,
         )
 
     def run(self) -> BatchResult:
@@ -189,6 +260,9 @@ class Reactor:
             trip_count=self.controller.trip_count,
             missing_temperature_readings=self.controller.missing_reading_count,
             max_true_temperature_c=self.max_true_temperature_c,
+            co2_g=self.co2_dosed_g,
+            ph_trip_count=self.ph_controller.trip_count,
+            missing_ph_readings=self.ph_controller.missing_reading_count,
         )
 
 

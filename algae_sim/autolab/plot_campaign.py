@@ -46,7 +46,7 @@ def load(database: Path) -> list[dict[str, Any]]:
         rows.append(
             {
                 "index": ordinal,
-                "setpoint": float(values["temperature_setpoint"]["value"]),
+                "setpoint": float(values["temperature"]["value"]),
                 "light": float(values["light_intensity"]["value"]),
                 "od": None if od is None else float(od[0]),
                 "sd": None if od is None else float(json.loads(od[1])["standard_deviation"]),

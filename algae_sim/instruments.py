@@ -56,3 +56,42 @@ class Heater:
         if not 0.0 <= commanded_fraction <= 1.0:
             raise ValueError("commanded heater fraction must be between 0 and 1")
         return 0.0 if self.failed else commanded_fraction
+
+
+@dataclass(slots=True)
+class PhSensor:
+    """pH probe: noise, a calibration offset, 0.01 resolution and occasional dropouts."""
+
+    noise_sd: float = 0.01
+    resolution: float = 0.01
+    offset: float = 0.0
+    dropout_probability: float = 0.0
+    rng: random.Random = field(default_factory=lambda: random.Random(2))
+
+    def read(self, true_ph: float) -> float | None:
+        if self.rng.random() < self.dropout_probability:
+            return None
+        raw = true_ph + self.offset + self.rng.gauss(0.0, self.noise_sd)
+        return round(round(raw / self.resolution) * self.resolution, 2)
+
+
+@dataclass(slots=True)
+class Co2Valve:
+    """CO2 dosing valve behind a separate supply shutoff.
+
+    ``stuck`` simulates a mechanical fault: ``"open"`` keeps dosing whatever it is
+    told, and ``"closed"`` never doses. The shutoff is the protection path. When it
+    is closed, no gas flows, even through a valve stuck open.
+    """
+
+    stuck: str | None = None
+
+    def apply(self, commanded_open: bool, *, shutoff_closed: bool) -> bool:
+        """Return whether CO2 actually flows this step."""
+        if self.stuck not in (None, "open", "closed"):
+            raise ValueError("stuck must be None, 'open' or 'closed'")
+        if shutoff_closed:
+            return False
+        if self.stuck is not None:
+            return self.stuck == "open"
+        return commanded_open

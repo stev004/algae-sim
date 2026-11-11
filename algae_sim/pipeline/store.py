@@ -58,6 +58,10 @@ create table if not exists environment (
     safe_state integer not null,
     energy_kwh real not null,
     faults text not null,
+    ph real,
+    ph_setpoint real not null,
+    co2_valve_open integer not null,
+    co2_g real not null,
     primary key (device_id, sequence)
 );
 create table if not exists od_readings (
@@ -175,10 +179,12 @@ def _insert_row(db: sqlite3.Connection, row: Row) -> None:
            c.hold_number, c.hold_elapsed_h)
     if isinstance(row, EnvironmentRow):
         db.execute(
-            "insert into environment values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert into environment values "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (*key, row.temperature_c, row.setpoint_c, row.light_umol_m2_s,
              row.heater_command, row.heater_applied, int(row.tripped), int(row.safe_state),
-             row.energy_kwh, json.dumps(list(row.faults))),
+             row.energy_kwh, json.dumps(list(row.faults)), row.ph, row.ph_setpoint,
+             int(row.co2_valve_open), row.co2_g),
         )
     elif isinstance(row, OdRow):
         db.execute(

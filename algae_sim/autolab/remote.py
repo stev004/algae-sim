@@ -265,7 +265,7 @@ class RemoteReactorController:
 
     async def apply_setpoints(self, command: SetpointCommand) -> SetpointAcknowledgement:
         try:
-            fields = convert.command_fields(command)
+            fields = convert.command_fields(command, self._manifest_now())
         except ValueError as exc:
             return SetpointAcknowledgement(
                 command_id=command.command_id,
@@ -304,14 +304,14 @@ class RemoteReactorController:
                 f"no reply from device after {1 + self._settings.resend_attempts} sends: {last}",
                 ambiguous=True,
             )
-        acknowledgement = convert.acknowledgement(self._controller_id, ack)
+        acknowledgement = convert.acknowledgement(self._controller_id, ack, self._manifest_now())
         if self._clock is not None:
             await self._clock.sleep_until(acknowledgement.acknowledged_at)
         return acknowledgement
 
     async def read_telemetry(self, reactor_id: str) -> EnvironmentTelemetry:
         sample = await self._guarded("GET", f"/v1/reactors/{reactor_id}/telemetry")
-        return convert.telemetry(self._controller_id, sample)
+        return convert.telemetry(self._controller_id, sample, self._manifest_now())
 
     async def enter_safe_state(self, reactor_id: str, reason: str) -> SafeStateAcknowledgement:
         try:

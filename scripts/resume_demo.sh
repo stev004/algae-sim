@@ -27,7 +27,8 @@ import json, sys
 d = json.load(sys.stdin)
 for k, v in d['reactors'].items():
     print(f\"    {k}: {v['state']:8s} hold {v.get('hold_elapsed_h', 0):6.2f} h, \"
-          f\"measured {v.get('measured_temperature_c')} °C\")"
+          f\"measured {v.get('measured', {}).get('temperature')} °C, \"
+          f\"pH {v.get('measured', {}).get('ph')}\")"
 }
 cleanup() { pkill -TERM -f "algae_sim device serve --port $PORT" 2>/dev/null || true; }
 trap cleanup EXIT

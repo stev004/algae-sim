@@ -49,13 +49,19 @@ def q(value, unit):
     return QuantityValue(value=Decimal(str(value)), unit=unit)
 
 
-def command(reactor="reactor-1", setpoint=30, light=150, experiment_id=None):
+SETPOINTS = {"temperature": 30.0, "light_intensity": 150.0, "ph": 7.5}
+
+
+def command(reactor="reactor-1", setpoint=30, light=150, ph=7.5, experiment_id=None):
     return SetpointCommand(
         experiment_id=experiment_id or uuid4(),
         run_id=uuid4(),
         reactor_id=reactor,
-        temperature_setpoint=q(setpoint, "degree_Celsius"),
-        light_intensity=q(light, "micromole / meter ** 2 / second"),
+        setpoints={
+            "temperature": q(setpoint, "degree_Celsius"),
+            "light_intensity": q(light, "micromole / meter ** 2 / second"),
+            "ph": q(ph, "dimensionless"),
+        },
         protocol_hash="0" * 64,
         issued_at=START,
     )
@@ -106,8 +112,7 @@ def run(coro):
 def test_repeated_command_is_applied_once():
     core = DeviceCore(DeviceSettings(), start_time=START)
     fields = dict(
-        command_id="c1", experiment_id="e1", reactor_id="reactor-1",
-        temperature_c=30.0, light_umol_m2_s=150.0,
+        command_id="c1", experiment_id="e1", reactor_id="reactor-1", setpoints=SETPOINTS,
     )
     first = core.apply_setpoints(**fields)
     again = core.apply_setpoints(**fields)
@@ -119,7 +124,7 @@ def test_state_survives_a_service_restart(tmp_path):
     service = DeviceService(DeviceSettings(), state_dir=tmp_path, start_time=START)
     service.core.apply_setpoints(
         command_id="c1", experiment_id="e1", reactor_id="reactor-2",
-        temperature_c=28.0, light_umol_m2_s=120.0,
+        setpoints={**SETPOINTS, "temperature": 28.0},
     )
     service.advance(START + timedelta(hours=5))
     service.stop()
@@ -128,6 +133,39 @@ def test_state_survives_a_service_restart(tmp_path):
     telemetry = restored.core.telemetry("reactor-2")
     assert telemetry["active_command_id"] == "c1"
     assert telemetry["hold_elapsed_h"] == pytest.approx(5.0, abs=0.01)
+
+
+def test_state_from_older_firmware_is_refused_not_misread(tmp_path):
+    service = DeviceService(DeviceSettings(), state_dir=tmp_path, start_time=START)
+    service.core.state_version = 1  # as if written before contract v2
+    service.stop()
+    with pytest.raises(RuntimeError, match="older firmware"):
+        DeviceService(DeviceSettings(), state_dir=tmp_path)
+
+
+def test_http_setpoints_must_be_an_object_of_numbers():
+    with device() as dev:
+        import urllib.error
+        import urllib.request
+
+        def post(body):
+            request = urllib.request.Request(
+                f"{dev.url}/v1/reactors/reactor-1/setpoints",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request) as reply:
+                    return reply.status, json.load(reply)
+            except urllib.error.HTTPError as exc:
+                return exc.code, json.load(exc)
+
+        base = {"command_id": "c1", "experiment_id": "e1"}
+        assert post({**base, "temperature_c": 30})[0] == 400  # the v1 shape is gone
+        assert post({**base, "setpoints": {"ph": "acid"}})[0] == 400
+        status, ack = post({**base, "setpoints": SETPOINTS})
+    assert status == 200 and ack["accepted"] and ack["applied"] == SETPOINTS
 
 
 def test_paced_device_refuses_to_be_pushed():
@@ -163,10 +201,12 @@ def test_discovered_and_drives_device_over_http():
             return cmd, ack, telemetry, reading, safe, after
 
         cmd, ack, telemetry, reading, safe, after = run(go())
-    assert ack.accepted and ack.applied_temperature_setpoint == q(30.0, "degree_Celsius")
+    assert ack.accepted and ack.applied == cmd.setpoints
     assert telemetry.sampled_at == START + timedelta(hours=12)
     assert telemetry.active_command_id == cmd.command_id
-    assert abs(float(telemetry.measured_temperature.value) - 30.0) < 1.0
+    assert abs(float(telemetry.measured["temperature"].value) - 30.0) < 1.0
+    assert abs(float(telemetry.measured["ph"].value) - 7.5) < 0.1
+    assert telemetry.consumption["co2"].unit == "gram"
     assert reading.measured_at == START + timedelta(hours=12)
     assert reading.source_evidence.is_mock and float(reading.raw_value) > 0.1
     assert safe.reached and after.active_command_id is None
@@ -223,6 +263,8 @@ class FlakyClient:
     def request(self, method, path, body=None):
         if path == "/v1/clock":
             return {"device_time": self.core.now.isoformat(), "mode": "lockstep"}
+        if path == "/v1/manifest":
+            return self.core.manifest()  # never flaky: AutoLab reads it before commanding
         if path == "/v1/clock/advance":
             moved = self.core.advance_to(datetime.fromisoformat(body["to"]))
             return {"device_time": moved.isoformat()}
