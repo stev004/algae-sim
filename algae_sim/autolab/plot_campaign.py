@@ -40,7 +40,7 @@ THEMES: dict[str, dict[str, str]] = {
         "band": "#f0efec",
         "good": "#0ca30c",
         "critical": "#d03b3b",
-        "pass_cell": "#eef5ee",
+        "pass_cell": "#f0efec",
     },
     "dark": {
         "surface": "#1a1a19",
@@ -49,12 +49,12 @@ THEMES: dict[str, dict[str, str]] = {
         "muted": "#898781",
         "grid": "#2c2c2a",
         "axis": "#383835",
-        "context": "#5a5955",
+        "context": "#76756f",
         "series": "#3987e5",
         "band": "#262624",
         "good": "#0ca30c",
         "critical": "#d03b3b",
-        "pass_cell": "#1f2a1f",
+        "pass_cell": "#262624",
     },
 }
 
@@ -204,17 +204,52 @@ def _frame(ax: Any, theme: dict[str, str]) -> None:
     ax.tick_params(length=0, pad=6)
 
 
-def _titles(fig: Any, title: str, subtitle: str, theme: dict[str, str]) -> None:
-    fig.text(0.02, 0.97, title, fontsize=14, fontweight="bold", color=theme["ink"],
-             va="top", ha="left")
-    fig.text(0.02, 0.905, subtitle, fontsize=10, color=theme["secondary"],
-             va="top", ha="left")
+# Layout is in inches, not figure fractions, so every chart has the same margins
+# and the same gaps between title, subtitle, legend and plot whatever its height.
+LEFT_IN = 0.22  # left edge of title, subtitle, legend and notes
+TITLE_TOP_IN = 0.2
+SUBTITLE_TOP_IN = 0.56
+LINE_IN = 0.19  # one line of 10 pt text, with leading
 
 
-def _legend(fig: Any, handles: list[Any], labels: list[str]) -> None:
-    """One row of legend under the subtitle, clear of the data."""
-    fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.08, 0.83), ncols=3,
-               fontsize=9, handletextpad=0.4, columnspacing=1.6)
+def _from_top(fig: Any, inches: float) -> float:
+    return 1 - inches / fig.get_figheight()
+
+
+def _from_left(fig: Any, inches: float) -> float:
+    return inches / fig.get_figwidth()
+
+
+def _titles(fig: Any, title: str, subtitle: str, theme: dict[str, str]) -> float:
+    """Draw title and subtitle; return how far down (inches) the subtitle ends."""
+    x = _from_left(fig, LEFT_IN)
+    fig.text(x, _from_top(fig, TITLE_TOP_IN), title, fontsize=14, fontweight="bold",
+             color=theme["ink"], va="top", ha="left")
+    fig.text(x, _from_top(fig, SUBTITLE_TOP_IN), subtitle, fontsize=10,
+             color=theme["secondary"], va="top", ha="left", linespacing=1.3)
+    return SUBTITLE_TOP_IN + LINE_IN * (subtitle.count("\n") + 1)
+
+
+def _legend(fig: Any, handles: list[Any], labels: list[str], top_in: float) -> float:
+    """One row of legend, aligned with the title; return where it ends (inches)."""
+    fig.legend(handles, labels, loc="upper left",
+               bbox_to_anchor=(_from_left(fig, LEFT_IN - 0.05), _from_top(fig, top_in)),
+               ncols=len(labels), fontsize=9, handletextpad=0.3, columnspacing=1.8,
+               borderaxespad=0, borderpad=0, handlelength=1.4)
+    return top_in + LINE_IN
+
+
+def _plot_top(fig: Any, top_in: float, bottom_in: float) -> None:
+    fig.subplots_adjust(top=_from_top(fig, top_in), bottom=bottom_in / fig.get_figheight())
+
+
+def _callout(ax: Any, text: str, xy: tuple[float, float], theme: dict[str, str],
+             *, x_fraction: float) -> None:
+    """Label a point from just above it, no leader line, kept inside the plot."""
+    ha = "right" if x_fraction > 0.8 else "left" if x_fraction < 0.2 else "center"
+    dx = {"right": 6, "left": -6, "center": 0}[ha]
+    ax.annotate(text, xy, xytext=(dx, 11), textcoords="offset points", ha=ha, va="bottom",
+                fontsize=9, color=theme["ink"], zorder=5)
 
 
 def progress_chart(
@@ -224,10 +259,10 @@ def progress_chart(
 
     scored = [e for e in experiments if e.od is not None]
     best = max(scored, key=lambda e: e.od)  # type: ignore[arg-type, return-value]
-    fig, ax = plt.subplots(figsize=(8, 4.8))
-    fig.subplots_adjust(left=0.09, right=0.97, top=0.72, bottom=0.13)
+    fig, ax = plt.subplots(figsize=(8, 4.6))
+    fig.subplots_adjust(left=0.09, right=0.97)
     _frame(ax, theme)
-    _titles(
+    below = _titles(
         fig,
         f"Best culture: OD750 {best.od:.2f}, found in experiment {best.index}",
         "Final optical density per experiment (mean of the replicates that passed QC). "
@@ -236,11 +271,8 @@ def progress_chart(
     )
 
     last = max(e.index for e in experiments)
-    ax.axvspan(-0.5, startup - 0.5, color=theme["band"], lw=0, zorder=0)
-    ax.text(startup / 2 - 0.5, 1.02, "random start-up", transform=ax.get_xaxis_transform(),
-            ha="center", va="bottom", fontsize=9, color=theme["muted"])
-    ax.text((startup + last) / 2, 1.02, "optimiser chooses", ha="center", va="bottom",
-            transform=ax.get_xaxis_transform(), fontsize=9, color=theme["muted"])
+    # The shaded band is the start-up phase; the legend's grey dot names it.
+    ax.axvspan(-0.6, startup - 0.5, color=theme["band"], lw=0, zorder=0)
 
     # Best so far, as a step line: the curve that should rise as the optimiser learns.
     xs, ys, running = [], [], 0.0
@@ -248,51 +280,43 @@ def progress_chart(
         running = max(running, e.od)  # type: ignore[type-var]
         xs.append(e.index)
         ys.append(running)
-    xs.append(last + 0.4)
+    xs.append(last + 0.6)
     ys.append(running)
-    ax.step(xs, ys, where="post", color=theme["secondary"], lw=1.5, zorder=2,
-            label="best so far")
+    ax.step(xs, ys, where="post", color=theme["muted"], lw=1.25, zorder=2,
+            solid_joinstyle="round", label="best so far")
 
     early = [e for e in scored if e.index < startup]
     later = [e for e in scored if e.index >= startup]
     ring = theme["surface"]
-    ax.scatter([e.index for e in early], [e.od for e in early], s=46, color=theme["context"],
-               edgecolor=ring, linewidth=1.5, zorder=3, label="random start-up trial")
-    ax.scatter([e.index for e in later], [e.od for e in later], s=46, color=theme["series"],
-               edgecolor=ring, linewidth=1.5, zorder=3, label="optimiser's choice")
+    dots = {"s": 52, "edgecolor": ring, "linewidth": 2, "zorder": 3}
+    ax.scatter([e.index for e in early], [e.od for e in early], color=theme["context"],
+               label="random start-up trial", **dots)
+    ax.scatter([e.index for e in later], [e.od for e in later], color=theme["series"],
+               label="optimiser's choice", **dots)
 
     top = max(e.od for e in scored)  # type: ignore[type-var]
-    excluded = [e for e in experiments if not e.observed]
-    for e in excluded:
-        ax.scatter([e.index], [0.03 * top], marker="X", s=70, color=theme["critical"],
+    for e in experiments:
+        if e.observed:
+            continue
+        ax.scatter([e.index], [0.04 * top], marker="X", s=64, color=theme["critical"],
                    edgecolor=ring, linewidth=1, zorder=3)
-        ax.annotate("excluded by QC", (e.index, 0.03 * top), xytext=(0, 9),
+        ax.annotate("excluded by QC", (e.index, 0.04 * top), xytext=(0, 9),
                     textcoords="offset points", ha="center", fontsize=8,
                     color=theme["secondary"])
 
-    right_side = best.index > last * 0.6
-    ax.annotate(
-        f"Best: {best.conditions}",
-        (best.index, best.od),
-        xytext=(-30, 16) if right_side else (30, 16),
-        textcoords="offset points",
-        ha="right" if right_side else "left",
-        va="bottom",
-        fontsize=9,
-        color=theme["ink"],
-        arrowprops={"arrowstyle": "-", "color": theme["muted"], "lw": 0.8,
-                    "shrinkA": 2, "shrinkB": 5},
-    )
+    _callout(ax, f"Best: {best.conditions}", (best.index, best.od), theme,
+             x_fraction=(best.index + 0.6) / (last + 1.2))
     ax.set_xlim(-0.6, last + 0.6)
-    ax.set_ylim(0, top * 1.25)
+    ax.set_ylim(0, top * 1.2)
     ax.set_xticks(range(0, last + 1, 2))
-    ax.set_xlabel("experiment (in the order run)")
-    ax.set_ylabel("final OD750")
+    ax.set_xlabel("experiment (in the order run)", labelpad=8)
+    ax.set_ylabel("final OD750", labelpad=8)
     ax.grid(axis="x", visible=False)
     handles, labels = ax.get_legend_handles_labels()
     order = [labels.index(n) for n in
              ("random start-up trial", "optimiser's choice", "best so far")]
-    _legend(fig, [handles[i] for i in order], [labels[i] for i in order])
+    end = _legend(fig, [handles[i] for i in order], [labels[i] for i in order], below + 0.14)
+    _plot_top(fig, end + 0.12, 0.6)
     return fig
 
 
@@ -306,10 +330,10 @@ def tradeoff_chart(experiments: list[Experiment], theme: dict[str, str]) -> Any:
     panels = [("energy", "energy used (kWh)")]
     if has_co2:
         panels.append(("co2", "CO₂ used (g)"))
-    fig, axes = plt.subplots(1, len(panels), figsize=(8, 5.0), sharey=True, squeeze=False)
-    fig.subplots_adjust(left=0.09, right=0.97, top=0.70, bottom=0.12, wspace=0.12)
+    fig, axes = plt.subplots(1, len(panels), figsize=(8, 4.7), sharey=True, squeeze=False)
+    fig.subplots_adjust(left=0.09, right=0.97, wspace=0.1)
     costs = "energy and CO₂" if has_co2 else "energy"
-    _titles(
+    below = _titles(
         fig,
         f"{len(front)} of {len(scored)} experiments are best trade-offs",
         f"Each dot is one experiment. Up is more growth, left is cheaper. Blue: no other "
@@ -319,55 +343,62 @@ def tradeoff_chart(experiments: list[Experiment], theme: dict[str, str]) -> Any:
     best = max(scored, key=lambda e: e.od)  # type: ignore[arg-type, return-value]
     cheapest = min(front, key=lambda e: e.energy)  # type: ignore[arg-type, return-value]
     ring = theme["surface"]
+    dots = {"s": 52, "edgecolor": ring, "linewidth": 2}
     for ax, (key, label) in zip(axes[0], panels, strict=True):
         _frame(ax, theme)
-        ax.scatter([getattr(e, key) for e in others], [e.od for e in others], s=46,
-                   color=theme["context"], edgecolor=ring, linewidth=1.5, zorder=3,
-                   label="other experiments")
-        ax.scatter([getattr(e, key) for e in front], [e.od for e in front], s=52,
-                   color=theme["series"], edgecolor=ring, linewidth=1.5, zorder=4,
-                   label="best trade-offs")
-        ax.set_xlabel(label)
+        ax.scatter([getattr(e, key) for e in others], [e.od for e in others],
+                   color=theme["context"], zorder=3, label="other experiments", **dots)
+        ax.scatter([getattr(e, key) for e in front], [e.od for e in front],
+                   color=theme["series"], zorder=4, label="best trade-offs", **dots)
+        ax.set_xlabel(label, labelpad=8)
         ax.set_xlim(left=0)
-    axes[0][0].set_ylabel("final OD750")
-    axes[0][0].set_ylim(0, max(e.od for e in scored) * 1.25)  # type: ignore[type-var]
     first = axes[0][0]
-    leader = {"arrowstyle": "-", "color": theme["muted"], "lw": 0.8, "shrinkA": 2, "shrinkB": 5}
-    first.annotate(f"most growth: {best.conditions}", (best.energy, best.od),
-                   xytext=(0.03, 0.97), textcoords="axes fraction", ha="left", va="top",
-                   fontsize=8, color=theme["ink"], arrowprops=leader)
+    first.set_ylabel("final OD750", labelpad=8)
+    first.set_ylim(0, max(e.od for e in scored) * 1.2)  # type: ignore[type-var]
+    right = first.get_xlim()[1]
+    _callout(first, f"most growth: {best.conditions}", (best.energy, best.od), theme,
+             x_fraction=best.energy / right)  # type: ignore[operator]
     if cheapest is not best:
         first.annotate(f"least energy among the best:\n{cheapest.conditions}",
-                       (cheapest.energy, cheapest.od), xytext=(0.03, 0.06),
-                       textcoords="axes fraction", ha="left", va="bottom", fontsize=8,
-                       color=theme["ink"], arrowprops=leader)
+                       (cheapest.energy, cheapest.od), xytext=(4, -12),
+                       textcoords="offset points", ha="left", va="top", fontsize=8.5,
+                       color=theme["ink"], linespacing=1.35, zorder=5)
     handles, labels = first.get_legend_handles_labels()
-    _legend(fig, handles[::-1], labels[::-1])
+    end = _legend(fig, handles[::-1], labels[::-1], below + 0.14)
+    _plot_top(fig, end + 0.12, 0.6)
     return fig
 
 
 def qc_chart(experiments: list[Experiment], theme: dict[str, str]) -> Any:
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Rectangle
+    from matplotlib.patches import FancyBboxPatch, Rectangle
 
     reactors = sorted({r for e in experiments for r in e.reactors})
     total = sum(len(e.reactors) for e in experiments)
     failed = [(e, r, why) for e in experiments for r, why in sorted(e.failures.items())]
     excluded = [e for e in experiments if not e.observed]
-    notes = len(failed)
-    height = 3.0 + 0.24 * notes
-    fig = plt.figure(figsize=(8, height))
-    grid_top = 1 - 1.15 / height
-    grid_bottom = grid_top - 1.3 / height
-    ax = fig.add_axes((0.14, grid_bottom, 0.83, grid_top - grid_bottom))
+    # One note per experiment and reason, naming every reactor it hit.
+    notes: dict[tuple[int, str], list[str]] = {}
+    for e, reactor, why in failed:
+        notes.setdefault((e.index, why), []).append(reactor)
+    observed = {e.index: e.observed for e in experiments}
+
     word = "experiment" if len(excluded) == 1 else "experiments"
-    _titles(
+    subtitle = ("Each square is one reactor in one experiment. An experiment is learned "
+                "from only if enough\nof its replicates pass (here 2 of 3).")
+    grid_h = 0.36 * (len(reactors) + 1)  # rows plus the experiment-number header
+    height = (SUBTITLE_TOP_IN + LINE_IN * 2 + 0.3 + grid_h + 0.3 + LINE_IN * 1.2
+              + LINE_IN * len(notes) + 0.25)
+    fig = plt.figure(figsize=(8, height))
+    below = _titles(
         fig,
-        f"QC rejected {notes} of {total} replicates and excluded {len(excluded)} {word}",
-        "Each square is one reactor in one experiment. An experiment is learned from only "
-        "if enough\nof its replicates pass (here 2 of 3).",
+        f"QC rejected {len(failed)} of {total} replicates and excluded "
+        f"{len(excluded)} {word}",
+        subtitle,
         theme,
     )
+    grid_top = below + 0.3
+    ax = fig.add_axes((0.14, _from_top(fig, grid_top + grid_h), 0.83, grid_h / height))
     ax.set_axis_off()
     last = max(e.index for e in experiments)
     for e in experiments:
@@ -376,42 +407,48 @@ def qc_chart(experiments: list[Experiment], theme: dict[str, str]) -> Any:
             if reactor not in e.reactors:
                 continue
             bad = reactor in e.failures
-            ax.add_patch(Rectangle(
-                (e.index - 0.42, y - 0.42), 0.84, 0.84,
+            ax.add_patch(FancyBboxPatch(
+                (e.index - 0.4, y - 0.4), 0.8, 0.8,
+                boxstyle="round,pad=0,rounding_size=0.12",
                 facecolor=theme["critical"] if bad else theme["pass_cell"],
-                edgecolor="none",
+                edgecolor="none", mutation_aspect=1,
             ))
             if bad:
-                ax.scatter([e.index], [y], marker="x", s=36, color="#ffffff", linewidths=2,
-                           zorder=3)
-            else:
-                ax.plot([e.index - 0.18, e.index - 0.04, e.index + 0.2],
-                        [y, y - 0.15, y + 0.17], color=theme["good"], lw=1.6,
-                        solid_capstyle="round", zorder=3)
+                ax.scatter([e.index], [y], marker="x", s=30, color="#ffffff",
+                           linewidths=1.8, zorder=3)
+            else:  # a small tick: passes are the quiet majority
+                ax.plot([e.index - 0.13, e.index - 0.03, e.index + 0.15],
+                        [y + 0.01, y - 0.11, y + 0.13], color=theme["good"], lw=1.3,
+                        solid_capstyle="round", solid_joinstyle="round", zorder=3)
         if not e.observed:
             ax.add_patch(Rectangle(
-                (e.index - 0.5, -0.55), 1.0, len(reactors) + 0.1, fill=False,
-                edgecolor=theme["critical"], linewidth=1.5,
+                (e.index - 0.5, -0.52), 1.0, len(reactors) + 0.04, fill=False,
+                edgecolor=theme["critical"], linewidth=1.4,
             ))
     for row, reactor in enumerate(reactors):
         ax.text(-0.75, len(reactors) - 1 - row, reactor, ha="right", va="center",
                 fontsize=9, color=theme["secondary"])
     for e in experiments:
-        ax.text(e.index, len(reactors) - 0.35, str(e.index), ha="center", va="bottom",
+        ax.text(e.index, len(reactors) - 0.38, str(e.index), ha="center", va="bottom",
                 fontsize=8, color=theme["muted"])
-    ax.text(-0.75, len(reactors) - 0.35, "experiment", ha="right", va="bottom",
+    ax.text(-0.75, len(reactors) - 0.38, "experiment", ha="right", va="bottom",
             fontsize=8, color=theme["muted"])
     ax.set_xlim(-0.6, last + 0.6)
-    ax.set_ylim(-0.6, len(reactors) - 0.1)
+    ax.set_ylim(-0.6, len(reactors) + 0.3)
 
-    y = grid_bottom - 0.32 / height
-    fig.text(0.14, y, "Why each replicate failed", fontsize=10, fontweight="bold",
-             color=theme["ink"], va="top")
-    for e, reactor, why in failed:
-        y -= 0.24 / height
-        tail = "  · experiment excluded" if not e.observed else ""
-        fig.text(0.14, y, f"Experiment {e.index}, {reactor}: {why}{tail}", fontsize=9,
+    x = _from_left(fig, LEFT_IN)
+    y_in = grid_top + grid_h + 0.3
+    fig.text(x, _from_top(fig, y_in), "Why replicates failed", fontsize=10,
+             fontweight="bold", color=theme["ink"], va="top")
+    y_in += LINE_IN * 1.2
+    for (index, why), hit in notes.items():
+        tail = "  (experiment excluded)" if not observed[index] else ""
+        fig.text(x, _from_top(fig, y_in), f"Experiment {index}", fontsize=9,
+                 color=theme["ink"], va="top")
+        fig.text(x + _from_left(fig, 1.05), _from_top(fig, y_in),
+                 f"{' and '.join(hit)}: {why}{tail}", fontsize=9,
                  color=theme["secondary"], va="top")
+        y_in += LINE_IN
     return fig
 
 
