@@ -5,7 +5,7 @@ import random
 import pytest
 
 from algae_sim.control import HysteresisController
-from algae_sim.instruments import Heater, OpticalDensitySensor, TemperatureSensor
+from algae_sim.instruments import OD750_PER_G_PER_L, Heater, OpticalDensitySensor, TemperatureSensor
 
 
 class TestSensors:
@@ -28,7 +28,7 @@ class TestSensors:
         sensor = OpticalDensitySensor(noise_sd_od=0.0)
         assert sensor.read(10.0) == sensor.max_od
         assert sensor.read(0.0) == 0.0
-        assert sensor.read(0.25) == pytest.approx(0.5)
+        assert sensor.read(0.25) == pytest.approx(0.25 * OD750_PER_G_PER_L, abs=0.001)
 
     def test_failed_heater_applies_nothing(self):
         assert Heater().apply(1.0) == 1.0

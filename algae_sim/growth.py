@@ -10,7 +10,9 @@
 * logistic term: crude stand-in for self-shading and nutrient limits.
 * loss: basal maintenance/death, plus heat stress above t_max.
 
-Default values are loosely Chlorella-like in shape but are illustrative only.
+Default values are drawn from published Chlorella vulgaris literature (sources in
+docs/model.md). They are literature-typical values pooled across strains and studies,
+not a fit to one strain, and the model itself is still not validated.
 """
 
 from __future__ import annotations
@@ -21,14 +23,17 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class GrowthParams:
-    mu_max_per_h: float = 0.08
-    t_min_c: float = 8.0
-    t_opt_c: float = 30.0
-    t_max_c: float = 38.0
-    i_opt_umol_m2_s: float = 150.0
-    carrying_capacity_g_per_l: float = 1.5
-    basal_loss_per_h: float = 0.005
-    heat_stress_loss_per_h_per_c: float = 0.05
+    # Sources and confidence for each value: docs/model.md, "Where the numbers come from".
+    mu_max_per_h: float = 0.08  # about 1.9 /day (Pozzobon 2022; Rossi et al. 2023)
+    t_min_c: float = 2.2  # cardinal temperatures: Rossi et al. 2023, mean of 13 data sets
+    t_opt_c: float = 28.9
+    t_max_c: float = 42.8
+    # Schwaderer et al. 2011 (Haldane fit). The Steele curve with this optimum
+    # over-penalises bright light compared with Pozzobon 2022: pending a better source.
+    i_opt_umol_m2_s: float = 142.0
+    carrying_capacity_g_per_l: float = 2.3  # lab batch with CO2 (Griffiths 2011)
+    basal_loss_per_h: float = 0.007  # maintenance, C. sorokiniana (Kliphuis et al. 2011)
+    heat_stress_loss_per_h_per_c: float = 0.05  # illustrative
 
     def __post_init__(self) -> None:
         if not self.t_min_c < self.t_opt_c < self.t_max_c:

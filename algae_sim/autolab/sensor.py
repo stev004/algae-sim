@@ -44,6 +44,7 @@ from autonomous_lab.hardware.sensors.errors import (
 )
 
 from algae_sim import __version__
+from algae_sim.instruments import OD750_PER_G_PER_L
 from algae_sim.reactor import DEFAULT_START_TIME, Reactor
 
 MEASUREMENT_TYPE = "optical_density"
@@ -117,8 +118,8 @@ def default_calibration(
         calibrated_at=calibrated_at,
         expires_at=calibrated_at + timedelta(days=valid_days),
         method="simulated_linear_od750",
-        reference_material="illustrative: OD750 = 2.0 x biomass (g/L)",
-        coefficients={"od_per_g_per_l": Decimal("2.0")},
+        reference_material=f"literature-typical: OD750 = {OD750_PER_G_PER_L} x biomass (g/L)",
+        coefficients={"od_per_g_per_l": Decimal(str(OD750_PER_G_PER_L))},
         created_at=calibrated_at,
     )
 

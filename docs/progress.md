@@ -4,9 +4,17 @@
 
 ## Current handoff — 2026-11-11
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f8421`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2, with an illustrative carbon model, a pH probe, a pH controller with low/high trips, and stuck-valve faults. The demo campaign optimises all three variables against OD750, energy and CO2. The pipeline capture format is now schema v3 with pH and CO2. 110 tests pass, including one that runs the same campaign twice and expects byte-identical charts; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags still match AutoLab's QC replicate for replicate, including the new CO2-valve fault.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f8421`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2, with an illustrative carbon model, a pH probe, a pH controller with low/high trips, and stuck-valve faults. The demo campaign optimises all three variables against OD750, energy and CO2. The pipeline capture format is now schema v3 with pH and CO2. 110 tests pass on the Chlorella parameters, including one that runs the same campaign twice and expects byte-identical charts; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags still match AutoLab's QC replicate for replicate, including the new CO2-valve fault.
 
 Next: the Azure version of the pipeline, with Steven closely involved (account, region, Data Explorer vs SQL, cost guard and teardown). See [data-pipeline.md](data-pipeline.md). A dashboard and write-up follow once the architecture settles.
+
+## 2026-11-11 — Chlorella vulgaris parameters
+
+- **Decision:** replace illustrative growth values with published *C. vulgaris* values, each cited with a confidence level in model.md. They are literature-typical, pooled across strains, not a fit to one strain; the model is still not validated.
+- **Finding:** the old illustrative μmax (0.08 /h) was already in the published range. The biggest changes are the temperature range (now 2.2 / 28.9 / 42.8 °C), the OD calibration (3.2 per g/L, so ODs read about 1.6× higher) and Xmax (2.3 g/L).
+- **Finding:** on the new parameters the demo optimiser's best culture (29.7 °C, 147 µmol/m²/s, pH 7.95) lands next to the published optima (28.9 °C, 142, 7.8). All four injected faults still fail QC as designed.
+- **Open:** the Steele light curve over-penalises bright light compared with Pozzobon 2022, and pH_min is probably too high. Both need full texts we haven't read (listed in model.md).
+- Added a plain statement to the README that the code was written by AI agents under Steven's direction.
 
 ## 2026-11-11 — Reproducible campaigns
 

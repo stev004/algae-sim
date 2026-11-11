@@ -29,6 +29,7 @@ from autonomous_lab.hardware.sensors.calibration import CalibrationRecord
 
 from algae_sim import __version__
 from algae_sim.autolab.sensor import MEASUREMENT_TYPE, OdSample
+from algae_sim.instruments import OD750_PER_G_PER_L
 
 TEMP = "degree_Celsius"
 LIGHT = "micromole / meter ** 2 / second"
@@ -181,7 +182,7 @@ def calibration(
         calibrated_at=calibrated_at,
         expires_at=calibrated_at + timedelta(days=valid_days),
         method="simulated_linear_od750",
-        reference_material="illustrative: OD750 = 2.0 x biomass (g/L)",
-        coefficients={"od_per_g_per_l": Decimal("2.0")},
+        reference_material=f"literature-typical: OD750 = {OD750_PER_G_PER_L} x biomass (g/L)",
+        coefficients={"od_per_g_per_l": Decimal(str(OD750_PER_G_PER_L))},
         created_at=calibrated_at,
     )

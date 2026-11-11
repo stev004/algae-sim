@@ -34,8 +34,8 @@ class CarbonParams:
     volume_l: float = 1.0
     # Lumped buffer: how far one gram of CO2 per litre moves pH (illustrative).
     ph_per_g_co2_per_l: float = 0.5
-    # Roughly the carbon content of algal dry biomass, expressed as CO2.
-    co2_per_g_biomass: float = 1.8
+    # About 50 % carbon by dry weight, expressed as CO2 (Chisti 2007).
+    co2_per_g_biomass: float = 1.83
     # pH the medium settles at under air sparging; depends on alkalinity (illustrative).
     air_equilibrium_ph: float = 8.6
     air_exchange_time_constant_h: float = 8.0
@@ -55,7 +55,12 @@ class CarbonParams:
 
 @dataclass(frozen=True, slots=True)
 class PhGrowthParams:
-    """Cardinal pH growth response; values are illustrative, not for any strain."""
+    """Cardinal pH growth response.
+
+    ``ph_opt`` matches the C. vulgaris optimum of 7.5-8.0 (Rachlin & Grosso 1991).
+    ``ph_min`` and ``ph_max`` are illustrative, pending a source: the same study
+    reports slowed, not stopped, growth down to pH 3.
+    """
 
     ph_min: float = 5.5
     ph_opt: float = 7.8

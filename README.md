@@ -18,7 +18,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
-  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 0.80" src="docs/images/progress.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.67" src="docs/images/progress.png">
 </picture>
 
 <picture>
@@ -31,7 +31,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
   <img alt="Pass or fail for every reactor in every experiment, with the reason for each failure" src="docs/images/qc.png">
 </picture>
 
-> All parameters are illustrative teaching values. The growth model is educational and **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
+> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain, and some (pH limits, the carbonate buffer) are still illustrative. The model is **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
 ## Quick start
 
@@ -104,7 +104,7 @@ The injected faults in the demo config:
 |---|---|
 | `algae_sim/thermal.py` | Heat balance of one well-mixed vessel |
 | `algae_sim/growth.py` | Educational growth model: temperature, light and pH responses, photoinhibition, crowding, heat-stress death |
-| `algae_sim/carbon.py` | Educational pH/CO2 model: photosynthetic uptake, CO2 dosing, gas exchange; cardinal pH growth response |
+| `algae_sim/carbon.py` | Simplified pH/CO2 model: photosynthetic uptake, CO2 dosing, gas exchange; cardinal pH growth response |
 | `algae_sim/instruments.py` | Noisy, quantised temperature, pH and OD750 sensors with dropouts; a heater and a CO2 valve that can fail |
 | `algae_sim/control.py` | Hysteresis thermostat with fail-safe and over-temperature trip; pH controller with fail-safe and low/high pH trips |
 | `algae_sim/reactor.py` | One step: sense → decide → actuate → physics; telemetry, energy, safe state, fault injection |
@@ -123,4 +123,4 @@ The injected faults in the demo config:
 4. ✅ The reactor as its own device process: an HTTP device service with persisted state; AutoLab survives a crash mid-culture and resumes the hold.
 5. 🔶 Data pipeline: capture → move → parse → store → analyse. ✅ Local version; Azure version next ([plan](docs/data-pipeline.md)).
 
-Working agreement for contributors and AI assistants: [AGENTS.md](AGENTS.md).
+The code was written by AI coding agents under my direction; I designed the system, set the requirements, and reviewed and tested every change. Working agreement for contributors and AI assistants: [AGENTS.md](AGENTS.md).

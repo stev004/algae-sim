@@ -28,11 +28,16 @@ class TemperatureSensor:
         return round(raw / self.resolution_c) * self.resolution_c
 
 
+# OD750 per g/L dry weight for C. vulgaris (Griffiths et al. 2011). Calibrations
+# vary with pigment content and instrument, so treat it as typical, not exact.
+OD750_PER_G_PER_L = 3.2
+
+
 @dataclass(slots=True)
 class OpticalDensitySensor:
-    """OD750-style reading. Illustrative linear calibration: OD = k * biomass."""
+    """OD750-style reading with a linear calibration: OD = k * biomass."""
 
-    od_per_g_per_l: float = 2.0
+    od_per_g_per_l: float = OD750_PER_G_PER_L
     noise_sd_od: float = 0.01
     max_od: float = 4.0  # above this the instrument saturates
     rng: random.Random = field(default_factory=lambda: random.Random(1))

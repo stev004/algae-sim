@@ -26,6 +26,7 @@ from algae_sim.autolab.sensor import (
     default_calibration,
     od_request,
 )
+from algae_sim.instruments import OD750_PER_G_PER_L
 
 
 def run(coro):
@@ -65,7 +66,9 @@ def test_valid_read_returns_identity_bound_evidence():
     assert m.request_id == request.request_id and m.sample_id == "r1"
     assert m.source_evidence.is_mock is True  # simulated, never claimed as hardware
     assert m.source_evidence.calibration_id is not None
-    assert float(m.raw_value) == pytest.approx(2.0 * reactor.true_biomass_g_per_l, abs=0.05)
+    assert float(m.raw_value) == pytest.approx(
+        OD750_PER_G_PER_L * reactor.true_biomass_g_per_l, abs=0.05
+    )
     assert m.measured_at.isoformat() == "2026-01-01T06:00:00+00:00"
 
 
