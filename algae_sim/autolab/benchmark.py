@@ -350,6 +350,189 @@ def summarise(observations: Sequence[Observation]) -> dict[str, Any]:
     return summary
 
 
+# -- charts ---------------------------------------------------------------------------
+
+# Categorical slots 1-3 of the validated palette, light and dark. The light aqua is
+# under 3:1 against the surface, so every line is also labelled directly.
+ARM_COLOURS = {
+    "light": {"optimiser": "#2a78d6", "random": "#eb6834", "grid": "#1baf7a"},
+    "dark": {"optimiser": "#3987e5", "random": "#d95926", "grid": "#199e70"},
+}
+ARM_LABELS = {"optimiser": "AutoLab optimiser", "random": "random search", "grid": "grid"}
+END_LABELS = {"optimiser": "optimiser", "random": "random", "grid": "grid"}  # line ends
+
+
+def _quantiles(values: Sequence[float]) -> tuple[float, float, float]:
+    q = statistics.quantiles(values, n=4, method="inclusive")
+    return q[0], statistics.median(values), q[2]
+
+
+def headline(summary: dict[str, Any]) -> str:
+    """The progress chart's title: the result, stated from the numbers."""
+    found = {(c["metric"], c["baseline"]): c for c in summary["comparisons"]}
+    hv, od = found[("hypervolume", "random")], found[("best_od", "random")]
+    # The paired median difference, as a share of random search's median.
+    gain = hv["median_difference"] / summary["arms"]["random"]["median_hypervolume"]
+    trade = f"{gain:.1%} better trade-offs" if hv["ci_low"] > 0 else "no better trade-offs"
+    cultures = ("not denser cultures" if od["ci_low"] <= 0 <= od["ci_high"]
+                else "and denser cultures" if od["median_difference"] > 0
+                else "but less dense cultures")
+    return f"The optimiser finds {trade}, {cultures}"
+
+
+def _label_line_ends(ax: Any, ends: list[tuple[float, str]], theme: dict[str, str]) -> None:
+    """Label each line at its right end, nudged apart so labels never overlap."""
+    low, high = ax.get_ylim()
+    gap = 0.07 * (high - low)  # about one line of 8.5 pt text on these axes
+    placed: list[float] = []
+    for y, arm in sorted(ends, reverse=True):
+        y = min([y, *[p - gap for p in placed]])
+        placed.append(y)
+        ax.annotate(END_LABELS[arm], (1, y), xycoords=("axes fraction", "data"),
+                    xytext=(6, 0), textcoords="offset points", va="center",
+                    fontsize=8.5, color=theme["secondary"], annotation_clip=False)
+
+
+def progress_figure(
+    observations: Sequence[Observation], summary: dict[str, Any], mode: str
+) -> Any:
+    import matplotlib.pyplot as plt
+
+    from algae_sim.autolab import plot_campaign as pc
+
+    theme, colours = pc.THEMES[mode], ARM_COLOURS[mode]
+    tracks = trajectories(observations)
+    arms = [a for a in ARMS if a in tracks]
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4.7), squeeze=False)
+    fig.subplots_adjust(left=0.08, right=0.89, wspace=0.38)
+    n = len(next(iter(tracks[arms[0]].values()))[0])
+    runs = len(tracks[arms[0]])
+    below = pc._titles(
+        fig,
+        headline(summary),
+        f"Median of {runs} paired runs per method, with the middle half of runs shaded. "
+        f"Each run: {n} experiments\nx 3 reactors on the simulated Chlorella reactor. "
+        "Run k gives every method the same simulated world.",
+        theme,
+    )
+    xs = list(range(1, n + 1))
+    panels = (
+        (0, "trade-off covered (hypervolume)", "share of outcome space"),
+        (1, "best culture so far", "final OD750"),
+    )
+    for ax, (which, heading, ylabel) in zip(axes[0], panels, strict=True):
+        pc._frame(ax, theme)
+        ax.set_title(heading, loc="left", fontsize=10, color=theme["ink"], pad=8)
+        ends: list[tuple[float, str]] = []
+        for arm in arms:
+            series = [track[which] for track in tracks[arm].values()]
+            low, mid, high = zip(*(_quantiles([s[i] for s in series]) for i in range(n)),
+                                 strict=True)
+            ax.fill_between(xs, low, high, color=colours[arm], alpha=0.14, lw=0)
+            ax.plot(xs, mid, color=colours[arm], lw=2, solid_capstyle="round",
+                    label=ARM_LABELS[arm])
+            ends.append((mid[-1], arm))
+        if "optimiser" in arms:
+            ax.axvline(STARTUP + 0.5, color=theme["muted"], lw=0.8, ls=(0, (3, 3)))
+            ax.annotate("optimiser starts\nchoosing", (STARTUP + 0.5, 0.03),
+                        xycoords=("data", "axes fraction"), xytext=(4, 0),
+                        textcoords="offset points", fontsize=8, color=theme["muted"])
+        if which == 0:
+            ax.set_ylim(bottom=0)
+        _label_line_ends(ax, ends, theme)
+        ax.set_xlim(1, n)
+        ax.set_xticks([1, 6, 12, 18] if n == 18 else xs[:: max(1, n // 4)])
+        ax.set_xlabel("experiments run", labelpad=8)
+        ax.set_ylabel(ylabel, labelpad=8)
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    end = pc._legend(fig, handles, labels, below + 0.14)
+    pc._plot_top(fig, end + 0.45, 0.6)
+    return fig
+
+
+def pairs_figure(summary: dict[str, Any], observations: Sequence[Observation], mode: str) -> Any:
+    """Per-run paired differences, optimiser minus each baseline, with median and CI."""
+    import matplotlib.pyplot as plt
+
+    from algae_sim.autolab import plot_campaign as pc
+
+    theme, colours = pc.THEMES[mode], ARM_COLOURS[mode]
+    tracks = trajectories(observations)
+    baselines = [a for a in ARMS if a in tracks and a != "optimiser"]
+    fig, axes = plt.subplots(1, 2, figsize=(8, 1.9 + 0.75 * len(baselines)), squeeze=False)
+    fig.subplots_adjust(left=0.2, right=0.97, wspace=0.12)
+    comparisons = {(c["metric"], c["baseline"]): c for c in summary["comparisons"]}
+    hv = comparisons[("hypervolume", "random")]
+    below = pc._titles(
+        fig,
+        f"The optimiser beat random search in {hv['optimiser_wins']} of {hv['pairs']} "
+        f"paired runs on the trade-off",
+        "Each dot is one run: optimiser minus baseline, same simulated world. Right of "
+        "zero favours the optimiser.\nBar: 95 % bootstrap interval for the median "
+        "difference. p: paired sign-flip permutation test.",
+        theme,
+    )
+    rng = random.Random(0)  # vertical jitter only, so overlapping dots stay visible
+    for ax, (metric, heading) in zip(
+        axes[0], (("hypervolume", "trade-off covered"), ("best_od", "best OD750")), strict=True
+    ):
+        pc._frame(ax, theme)
+        ax.grid(axis="y", visible=False)
+        ax.set_title(heading, loc="left", fontsize=10, color=theme["ink"], pad=8)
+        ax.axvline(0, color=theme["axis"], lw=1)
+        which = 0 if metric == "hypervolume" else 1
+        for row, baseline in enumerate(baselines):
+            y = len(baselines) - 1 - row
+            runs = sorted(set(tracks["optimiser"]) & set(tracks[baseline]))
+            diffs = [tracks["optimiser"][r][which][-1] - tracks[baseline][r][which][-1]
+                     for r in runs]
+            ax.scatter(diffs, [y + rng.uniform(-0.18, 0.18) for _ in diffs], s=22,
+                       color=colours[baseline], edgecolor=theme["surface"], linewidth=1,
+                       zorder=3)
+            c = comparisons[(metric, baseline)]
+            ax.plot([c["ci_low"], c["ci_high"]], [y - 0.34] * 2, color=theme["ink"], lw=2,
+                    solid_capstyle="round", zorder=4)
+            ax.plot([c["median_difference"]], [y - 0.34], "o", color=theme["ink"], ms=5,
+                    zorder=5)
+            p = c["p_value"]
+            ax.annotate(f"p {'< 0.001' if p < 0.001 else f'= {p:.2f}'}",
+                        (1, y - 0.34), xycoords=("axes fraction", "data"), xytext=(-2, 0),
+                        textcoords="offset points", ha="right", va="center", fontsize=8,
+                        color=theme["secondary"])
+        ax.set_yticks(range(len(baselines)))
+        ax.set_yticklabels([f"vs {ARM_LABELS[b]}" for b in reversed(baselines)]
+                           if ax is axes[0][0] else [])
+        ax.set_ylim(-0.7, len(baselines) - 0.5)
+        ax.set_xlabel("difference (optimiser minus baseline)", labelpad=8)
+    pc._plot_top(fig, below + 0.42, 0.55)
+    return fig
+
+
+def plot(observations: Sequence[Observation], summary: dict[str, Any], output_dir: Path
+         ) -> list[Path]:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from algae_sim.autolab import plot_campaign as pc
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for mode in ("light", "dark"):
+        pc._style(plt, pc.THEMES[mode])
+        suffix = "" if mode == "light" else "-dark"
+        for name, fig in (
+            ("benchmark-progress", progress_figure(observations, summary, mode)),
+            ("benchmark-pairs", pairs_figure(summary, observations, mode)),
+        ):
+            path = output_dir / f"{name}{suffix}.png"
+            fig.savefig(path, dpi=pc.DPI)
+            plt.close(fig)
+            written.append(path)
+    return written
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -366,9 +549,12 @@ def main(argv: list[str] | None = None) -> None:
         path = run_all(args.output_dir, args.runs, args.workers, args.arms, args.keep_databases)
         print(f"wrote {path}")
     else:
-        summary = summarise(load_observations(args.output_dir / "observations.jsonl"))
+        observations = load_observations(args.output_dir / "observations.jsonl")
+        summary = summarise(observations)
         (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         print(json.dumps(summary, indent=2))
+        for path in plot(observations, summary, args.output_dir / "charts"):
+            print(f"wrote {path}")
 
 
 if __name__ == "__main__":
