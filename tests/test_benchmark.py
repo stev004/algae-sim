@@ -84,3 +84,24 @@ class TestDesign:
         space = config["parameter_space"]
         for name, levels in GRID_LEVELS.items():
             assert all(space[name]["minimum"] <= v <= space[name]["maximum"] for v in levels)
+
+
+def test_headline_states_the_result_from_the_numbers():
+    from algae_sim.autolab.benchmark import headline
+
+    def summary(hv_ci, od_ci):
+        return {
+            "arms": {"random": {"median_hypervolume": 0.25}},
+            "comparisons": [
+                {"metric": "hypervolume", "baseline": "random", "median_difference": 0.01,
+                 "ci_low": hv_ci[0], "ci_high": hv_ci[1]},
+                {"metric": "best_od", "baseline": "random", "median_difference": 0.0,
+                 "ci_low": od_ci[0], "ci_high": od_ci[1]},
+            ],
+        }
+
+    assert headline(summary((0.001, 0.02), (-0.1, 0.1))) == (
+        "The optimiser finds 4.0% better trade-offs, not denser cultures"
+    )
+    # An interval that crosses zero is not claimed as a win.
+    assert "no better trade-offs" in headline(summary((-0.01, 0.02), (-0.1, 0.1)))

@@ -33,6 +33,10 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 > Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
+## Benchmark: does the optimiser help?
+
+30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.5 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
+
 ## Quick start
 
 Needs [uv](https://docs.astral.sh/uv/). uv fetches Python 3.12 and a pinned AutoLab commit itself.
@@ -111,9 +115,9 @@ The injected faults in the demo config:
 | `algae_sim/records.py` | `run.json` and `telemetry.jsonl`, the instrument-capture format |
 | `algae_sim/device/` | Device firmware (`core.py`: reactor bank, limits, idempotent commands, device clock) and the HTTP device service (`service.py`) |
 | `algae_sim/pipeline/` | Data pipeline: parse/validate, raw + clean stores, ingest endpoint, uploader, per-hold analysis |
-| `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign charts (`plot_campaign.py`); an earlier database-free optimiser loop (`campaign.py`) |
+| `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign charts (`plot_campaign.py`); the optimiser benchmark (`benchmark.py`); an earlier database-free optimiser loop (`campaign.py`) |
 | `configs/` | Culture campaign and installation policy |
-| `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
+| `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [optimiser benchmark](docs/benchmark.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
 
 ## Roadmap
 

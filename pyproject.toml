@@ -34,7 +34,7 @@ algae-sim-reactor = "algae_sim.autolab.controller:create_controller"
 algae-sim-device = "algae_sim.autolab.remote:create_remote_controller"
 
 [tool.uv.sources]
-autonomous-lab = { git = "https://github.com/stev004/autolab", rev = "e9f8421fd85ac86b150877be71d395d089a0d266" }
+autonomous-lab = { git = "https://github.com/stev004/autolab", rev = "26bfc8b85871f5d3e1fc14dfb6ab20e0461c9db1" }
 
 [tool.hatch.metadata]
 allow-direct-references = true

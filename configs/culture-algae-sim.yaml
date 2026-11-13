@@ -1,4 +1,4 @@
-# Copied from AutoLab's configs/culture-algae-sim.yaml (main e9f8421), plus adapter settings.
+# Copied from AutoLab's configs/culture-algae-sim.yaml (main e9f8421, unchanged at 26bfc8b), plus adapter settings.
 # Culture campaign (contract v2): tune temperature, light and pH for a simulated
 # algae photobioreactor, maximising end-point OD750 while minimising energy and CO2.
 # pH is a setpoint the device holds by dosing CO2; CO2 used is measured.

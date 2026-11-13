@@ -4,9 +4,19 @@
 
 ## Current handoff — 2026-11-11
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `e9f8421`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth now uses published *Chlorella vulgaris* values (temperature, light curve, pH limits, CO2 per biomass, OD calibration), each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. 112 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)). 123 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
 
-Next (agreed with Steven, starting 2026-11-12): **an optimiser benchmark**. Run AutoLab's optimiser, random search and a grid on the Chlorella model, 20–30 seeds each at the same 20-experiment budget; plot best-so-far curves with median and spread; test the final results; write two pages including the limits. Steven will open a separate AutoLab session: ask it whether AutoLab can run grid and random-only strategies, and about adding the AI-authorship sentence to AutoLab's README (algae-sim's README already has it). After that: the Azure pipeline with Steven driving ([data-pipeline.md](data-pipeline.md)), then a dashboard and write-up.
+Next: the Azure version of the pipeline, with Steven driving (account, region, Data Explorer vs SQL, cost guard and teardown; see [data-pipeline.md](data-pipeline.md)), then a dashboard and write-up.
+
+## 2026-11-13 — Optimiser benchmark
+
+- **Decision (agreed with Steven):** benchmark AutoLab's optimiser against random search and a grid. 30 paired runs per method, 18 experiments each. Score with 3-D hypervolume against a reference point from device limits only, plus best OD750; use distribution-free paired statistics.
+- **Finding (from the AutoLab session):** AutoLab seeds each trial's sampler with campaign seed + index, so adjacent campaign seeds share start-up designs. Benchmark seeds are spaced 1000 apart.
+- **Decision:** AutoLab gained an optional `optimization.grid_levels` setting (commit 780937b, approved by Steven) so a grid can name its levels. algae-sim now pins AutoLab `26bfc8b`, which adds only a README line on top.
+- **Result:**
+  - Against random search, the optimiser gives +2.5 % hypervolume (22 of 30 pairs better, 95 % CI +0.0011 to +0.0221, p < 0.001) but no difference in best OD (p = 0.80).
+  - Against the grid, it gives +13.4 % hypervolume (30 of 30) and +5.1 % best OD.
+  - On this smooth simulated surface random search is a strong baseline. Limits are in benchmark.md.
 
 ## 2026-11-11 — Chlorella light and pH from primary sources
 

@@ -37,7 +37,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "autonomous-lab", marker = "extra == 'autolab'", git = "https://github.com/stev004/autolab?rev=e9f8421fd85ac86b150877be71d395d089a0d266" },
+    { name = "autonomous-lab", marker = "extra == 'autolab'", git = "https://github.com/stev004/autolab?rev=26bfc8b85871f5d3e1fc14dfb6ab20e0461c9db1" },
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.9,<4" },
 ]
 provides-extras = ["autolab", "plot"]
@@ -69,7 +69,7 @@ wheels = [
 [[package]]
 name = "autonomous-lab"
 version = "0.5.0"
-source = { git = "https://github.com/stev004/autolab?rev=e9f8421fd85ac86b150877be71d395d089a0d266#e9f8421fd85ac86b150877be71d395d089a0d266" }
+source = { git = "https://github.com/stev004/autolab?rev=26bfc8b85871f5d3e1fc14dfb6ab20e0461c9db1#26bfc8b85871f5d3e1fc14dfb6ab20e0461c9db1" }
 dependencies = [
     { name = "alembic" },
     { name = "numpy" },
