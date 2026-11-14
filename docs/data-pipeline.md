@@ -51,29 +51,48 @@ Message format, schema version 3: `kind` (`environment` | `od`), `device_id` (`<
 - Three bad lines were quarantined: an old schema version, a torn write, and an impossible 412 °C reading.
 - The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 5 reactor-2 and hold 6 reactors 1 and 2 (heater faults, off setpoint), hold 9 reactor-3 (culture crash, OD drop) and hold 11 reactor-1 (CO2 valve stuck open: `protection_trip`, `ph_off_setpoint`). These are two independent views of the same events.
 
-## Azure version (planned)
+## Azure version (proposed 2026-11-14, nothing created yet)
 
-Each local piece has an Azure counterpart. The parse rules and message format stay as they are.
+### Facts checked against official Microsoft pages, 2026-11-14
 
-| Local | Azure candidate | Free allowance, checked 2026-11-10 (check again before building) |
+| Service | What matters here | Source |
 |---|---|---|
-| ingest HTTP server | Azure Functions, HTTP trigger, Flex Consumption plan | 250,000 executions and 100,000 GB-s a month, per subscription |
-| `raw/` folder | Blob Storage container | Not free; a few MB costs cents a month |
-| SQLite clean tables | Azure Data Explorer free cluster (alternative: Azure SQL Database free tier) | ADX: no subscription or card needed, ~100 GB, 1 year, renewable. SQL: 100,000 vCore-s and 32 GB a month, can auto-pause at the limit |
-| report | KQL queries plus an ADX dashboard | Included in the free cluster |
-| (later) device identity | IoT Hub Free | 8,000 messages a day and 500 devices. Too few for one message per sample at campaign speed, so it would need batched messages or slower capture |
+| Free account | $200 credit for 30 days, card needed. A **spending limit is on by default**: at the limit, or after 30 days, services are disabled, not charged, unless you upgrade. Free monthly amounts continue on pay-as-you-go. | learn.microsoft.com, *avoid charges with your free account* (updated 2026-03-25); *spending limit* (2026-04-30) |
+| Functions, Flex Consumption | 250,000 executions and 100,000 GB-s a month, per subscription. No minimum charge with always-ready set to 0. Python 3.10–3.15. Linux on the legacy Consumption plan is retired for new features, so Flex is the right plan. UK availability is checked with `az functionapp list-flexconsumption-locations`. | *Flex Consumption plan* (2026-11-09); *Functions scale* (2026-11-08) |
+| Data Explorer free cluster | **No subscription or card needed.** About 100 GB, 1 year, may be renewed or withdrawn by Microsoft at any time, no SLA. Data sits in "Europe", not a chosen UK region. Supports streaming ingestion (4 MB per request), the Python SDKs, materialised views (for dedupe) and dashboards. | *Start for free* (2026-06-11); *streaming ingestion* (2026-02-11) |
+| Azure SQL free offer (fallback) | 100,000 vCore-s and 32 GB a month per database, up to 10. Choose **AutoPause** at the limit; BillOverUsage can't be undone. An open connection stops it pausing. | *Free offer* (2026-11-11) |
+| Blob Storage | Hot LRS in UK South: about £0.014 per GB-month, £0.044 per 10,000 writes. 5 GB free for 12 months on the free account. A few MB costs effectively nothing. | Free-services page; Microsoft retail prices API |
+| Budgets | **Only alert** (with an 8–24 h lag); they stop nothing unless an action group runs something you wrote. There is no spending limit on pay-as-you-go. | *Create budgets* (2025-09-26) |
+| IoT Hub Free | 8,000 messages a day, metered in 0.5 KB units. Not needed for this design. | IoT Hub scaling (2026-05-06) |
 
-Open decisions for Steven:
-- Account: new free account ($200 for 30 days, card required; services are disabled rather than charged unless you upgrade) or pay-as-you-go with free tiers.
-- Region.
-- Data Explorer or SQL as the clean store.
-- Whether to add IoT Hub.
+### Proposed design
 
-Budgets only send alerts; they don't stop spending. So also plan:
-- free-tier settings that cap or pause usage;
-- a small budget alert;
-- a one-command teardown.
+```text
+laptop: device service → capture log → uploader ──HTTPS──▶ Azure Function (Flex Consumption, UK South)
+                                                             ├─▶ Blob container raw/  (batch exactly as received)
+                                                             └─▶ parse.py (unchanged) ─▶ Data Explorer free cluster
+                                                                                          ├─ environment, od, rejected tables
+                                                                                          ├─ materialised views: dedupe on (device_id, sequence)
+                                                                                          └─ dashboard: the per-hold report as KQL
+```
 
-Data Explorer doesn't deduplicate on ingest, so the `(device_id, sequence)` rule would move to a materialised view (`arg_max`) or be applied at query time.
+- **Same rules, new hosting.** `parse.py` and the message format don't change. The Function does what `ingest.py` does today, and the uploader only needs a URL and a key.
+- **Dedupe moves to the store.** Data Explorer accepts duplicates on ingest; a materialised view with `arg_max(ingested_at, *) by device_id, sequence` keeps one row per message, so replays stay harmless.
+- **Code layout.** Azure code goes in its own optional subpackage (`algae_sim/azure/`, with its own extra dependencies), so the core package stays standard-library only.
+- **Secrets.** The Function key and connection settings live in environment variables and `az login`, never in Git. The Function reaches storage and Data Explorer by managed identity where supported.
+- **Cost guards:**
+  - build inside the free account's 30 days, where the spending limit is a real hard cap;
+  - tag every resource and keep everything in one resource group;
+  - a one-command teardown that deletes that group;
+  - a £5 budget alert if it stays on pay-as-you-go;
+  - Application Insights off or heavily sampled, since its cost wasn't checked.
+- **Expected cost:** £0 during the free month. On pay-as-you-go afterwards, pennies a month for blob storage, with Functions inside the free grant.
 
-Secrets (the Function key and storage connection strings) stay out of Git, in environment variables or `az login`.
+### Decisions for Steven
+
+- Account: free account (hard cap for 30 days, then upgrade or let it lapse) or straight to pay-as-you-go.
+- Clean store: Data Explorer free cluster (proposed) or Azure SQL free tier (UK region, real cap, more dedupe work).
+- Region for the Function and storage: UK South proposed.
+- Cost ceiling to agree before anything is created.
+
+Data Explorer's free cluster needs no subscription, so a £0, no-card variant is possible: the uploader writes straight to Data Explorer, with raw batches kept in a table. It drops the Function and Blob, and so most of the cloud-engineering practice.
