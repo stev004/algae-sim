@@ -88,11 +88,11 @@ laptop: device service → capture log → uploader ──HTTPS──▶ Azure F
   - Application Insights off or heavily sampled, since its cost wasn't checked.
 - **Expected cost:** £0 during the free month. On pay-as-you-go afterwards, pennies a month for blob storage, with Functions inside the free grant.
 
-### Decisions for Steven
+### Decisions (Steven, 2026-11-14)
 
-- Account: free account (hard cap for 30 days, then upgrade or let it lapse) or straight to pay-as-you-go.
-- Clean store: Data Explorer free cluster (proposed) or Azure SQL free tier (UK region, real cap, more dedupe work).
-- Region for the Function and storage: UK South proposed.
-- Cost ceiling to agree before anything is created.
+- **Account:** a new Azure free account. Build inside its 30 days, where the spending limit is a hard cap; afterwards, tear down or keep only free-tier pieces.
+- **Clean store:** the Data Explorer free cluster.
+- **Cost ceiling: £0.** No pay-as-you-go spend without a new decision.
+- **Region:** UK South for the Function and storage (to confirm with `az functionapp list-flexconsumption-locations`).
 
 Data Explorer's free cluster needs no subscription, so a £0, no-card variant is possible: the uploader writes straight to Data Explorer, with raw batches kept in a table. It drops the Function and Blob, and so most of the cloud-engineering practice.
