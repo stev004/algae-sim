@@ -48,6 +48,21 @@ Relative differences are against the baseline's median. The three p-values below
   <img alt="Per-run differences, optimiser minus random search and optimiser minus grid, for hypervolume and best OD750, with medians and 95 percent intervals" src="images/benchmark-pairs.png">
 </picture>
 
+## Sensitivity: fewer random start-up experiments
+
+The optimiser spends its first 8 of 18 experiments sampling at random. Rerunning only the optimiser arm with 4 start-up experiments, against the same 30 worlds and the same random and grid results:
+
+| Optimiser (4 start-up) vs | Score | Optimiser better in | Median difference (95 % CI) | Relative | p |
+|---|---|---|---|---|---|
+| random search | hypervolume | 25 / 30 | +0.015 (+0.009 to +0.022) | +5.5 % | < 0.001 |
+| random search | best OD750 | 15 / 30 | +0.001 (−0.066 to +0.041) | +0.1 % | 0.99 |
+| grid | hypervolume | 30 / 30 | +0.037 (+0.034 to +0.041) | +14.7 % | < 0.001 |
+| grid | best OD750 | 26 / 30 | +0.080 (+0.064 to +0.093) | +5.4 % | < 0.001 |
+
+The edge over random search roughly doubles, from 2.5 % to 5.5 %, and its interval moves further from zero. Comparing the two optimiser settings directly, run for run, 4 start-up experiments beat 8 in 14 of 30 runs (p = 0.13), so the improvement is suggestive rather than established. The 8-experiment setting stays the headline because it was chosen before the results were seen. Choosing the setting that happened to score best would overstate the effect.
+
+Reproduce with `--startup 4` on both `run` (optimiser arm only) and `analyse`.
+
 ## What it means
 
 - **The optimiser learns something, but late, and only about the trade-off.**

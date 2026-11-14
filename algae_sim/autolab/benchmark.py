@@ -81,7 +81,7 @@ class Observation:
 # -- running ---------------------------------------------------------------------------
 
 
-def run_config(arm: str, run: int) -> dict[str, Any]:
+def run_config(arm: str, run: int, startup: int = STARTUP) -> dict[str, Any]:
     """The campaign YAML for one arm and run, built from the demo config."""
     config = yaml.safe_load(CONFIG.read_text())
     config["campaign"]["name"] = f"benchmark_{arm}_{run:02d}"
@@ -91,7 +91,7 @@ def run_config(arm: str, run: int) -> dict[str, Any]:
     settings.update(seed=run + 1, heater_faults={}, culture_crashes={}, co2_valve_faults={})
     optimization = config["optimization"]
     if arm == "optimiser":
-        optimization.update(strategy="bayesian", startup_experiments=STARTUP)
+        optimization.update(strategy="bayesian", startup_experiments=startup)
     elif arm == "random":
         optimization.update(strategy="random", startup_experiments=0)
     elif arm == "grid":
@@ -102,7 +102,11 @@ def run_config(arm: str, run: int) -> dict[str, Any]:
 
 
 def run_one(
-    arm: str, run: int, output_dir: Path, keep_database: bool = False
+    arm: str,
+    run: int,
+    output_dir: Path,
+    keep_database: bool = False,
+    startup: int = STARTUP,
 ) -> list[Observation]:
     """Run one campaign in its own directory and database; return its observations.
 
@@ -116,7 +120,7 @@ def run_one(
     work = output_dir / "runs" / f"{arm}-{run:02d}"
     work.mkdir(parents=True, exist_ok=True)
     config_path = work / "campaign.yaml"
-    config_path.write_text(yaml.safe_dump(run_config(arm, run), sort_keys=False))
+    config_path.write_text(yaml.safe_dump(run_config(arm, run, startup), sort_keys=False))
     database = work / "autolab.sqlite3"
     database.unlink(missing_ok=True)
     storage = Storage(Database(database))
@@ -180,9 +184,9 @@ def read_observations(database: Path, arm: str, run: int) -> list[Observation]:
     return observations
 
 
-def _job(args: tuple[str, int, str, bool]) -> list[dict[str, Any]]:
-    arm, run, output_dir, keep = args
-    return [asdict(o) for o in run_one(arm, run, Path(output_dir), keep)]
+def _job(args: tuple[str, int, str, bool, int]) -> list[dict[str, Any]]:
+    arm, run, output_dir, keep, startup = args
+    return [asdict(o) for o in run_one(arm, run, Path(output_dir), keep, startup)]
 
 
 def run_all(
@@ -191,10 +195,15 @@ def run_all(
     workers: int,
     arms: Sequence[str] = ARMS,
     keep_databases: bool = False,
+    startup: int = STARTUP,
 ) -> Path:
     """Run every arm x run in parallel processes; write ``observations.jsonl``."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    jobs = [(arm, run, str(output_dir), keep_databases) for run in range(runs) for arm in arms]
+    jobs = [
+        (arm, run, str(output_dir), keep_databases, startup)
+        for run in range(runs)
+        for arm in arms
+    ]
     results = output_dir / "observations.jsonl"
     with ProcessPoolExecutor(max_workers=workers) as pool:
         batches = list(pool.map(_job, jobs))
@@ -394,7 +403,10 @@ def _label_line_ends(ax: Any, ends: list[tuple[float, str]], theme: dict[str, st
 
 
 def progress_figure(
-    observations: Sequence[Observation], summary: dict[str, Any], mode: str
+    observations: Sequence[Observation],
+    summary: dict[str, Any],
+    mode: str,
+    startup: int = STARTUP,
 ) -> Any:
     import matplotlib.pyplot as plt
 
@@ -433,8 +445,8 @@ def progress_figure(
                     label=ARM_LABELS[arm])
             ends.append((mid[-1], arm))
         if "optimiser" in arms:
-            ax.axvline(STARTUP + 0.5, color=theme["muted"], lw=0.8, ls=(0, (3, 3)))
-            ax.annotate("optimiser starts\nchoosing", (STARTUP + 0.5, 0.03),
+            ax.axvline(startup + 0.5, color=theme["muted"], lw=0.8, ls=(0, (3, 3)))
+            ax.annotate("optimiser starts\nchoosing", (startup + 0.5, 0.03),
                         xycoords=("data", "axes fraction"), xytext=(4, 0),
                         textcoords="offset points", fontsize=8, color=theme["muted"])
         if which == 0:
@@ -508,8 +520,12 @@ def pairs_figure(summary: dict[str, Any], observations: Sequence[Observation], m
     return fig
 
 
-def plot(observations: Sequence[Observation], summary: dict[str, Any], output_dir: Path
-         ) -> list[Path]:
+def plot(
+    observations: Sequence[Observation],
+    summary: dict[str, Any],
+    output_dir: Path,
+    startup: int = STARTUP,
+) -> list[Path]:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -523,7 +539,7 @@ def plot(observations: Sequence[Observation], summary: dict[str, Any], output_di
         pc._style(plt, pc.THEMES[mode])
         suffix = "" if mode == "light" else "-dark"
         for name, fig in (
-            ("benchmark-progress", progress_figure(observations, summary, mode)),
+            ("benchmark-progress", progress_figure(observations, summary, mode, startup)),
             ("benchmark-pairs", pairs_figure(summary, observations, mode)),
         ):
             path = output_dir / f"{name}{suffix}.png"
@@ -542,18 +558,22 @@ def main(argv: list[str] | None = None) -> None:
     run.add_argument("--workers", type=int, default=8)
     run.add_argument("--arms", nargs="+", choices=ARMS, default=list(ARMS))
     run.add_argument("--keep-databases", action="store_true")
+    run.add_argument("--startup", type=int, default=STARTUP,
+                     help="random start-up experiments for the optimiser arm")
     analyse = sub.add_parser("analyse")
     analyse.add_argument("output_dir", type=Path)
+    analyse.add_argument("--startup", type=int, default=STARTUP)
     args = parser.parse_args(argv)
     if args.command == "run":
-        path = run_all(args.output_dir, args.runs, args.workers, args.arms, args.keep_databases)
+        path = run_all(args.output_dir, args.runs, args.workers, args.arms,
+                       args.keep_databases, args.startup)
         print(f"wrote {path}")
     else:
         observations = load_observations(args.output_dir / "observations.jsonl")
         summary = summarise(observations)
         (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         print(json.dumps(summary, indent=2))
-        for path in plot(observations, summary, args.output_dir / "charts"):
+        for path in plot(observations, summary, args.output_dir / "charts", args.startup):
             print(f"wrote {path}")
 
 

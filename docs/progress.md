@@ -17,6 +17,7 @@ Next: the Azure version of the pipeline, with Steven driving (account, region, D
   - Against random search, the optimiser gives +2.5 % hypervolume (22 of 30 pairs better, 95 % CI +0.0011 to +0.0221, p < 0.001) but no difference in best OD (p = 0.80).
   - Against the grid, it gives +13.4 % hypervolume (30 of 30) and +5.1 % best OD.
   - On this smooth simulated surface random search is a strong baseline. Limits are in benchmark.md.
+- **Sensitivity:** with 4 random start-up experiments instead of 8, the edge over random search grows to +5.5 % hypervolume (25 of 30). Comparing 4 against 8 directly is not significant (p = 0.13). The pre-chosen 8 stays the headline.
 
 ## 2026-11-11 — Chlorella light and pH from primary sources
 
