@@ -1,15 +1,18 @@
 """Educational microalgae growth model. NOT validated; do not use for prediction.
 
-    dX/dt = mu_max * f_T(T) * f_I(I) * f_pH * X * (1 - X / X_max) - loss(T) * X
+    dX/dt = mu_max * f_T(T) * <f_I(I(z))> * f_pH * X * (1 - X / X_max) - loss(T) * X
 
 * f_T: cardinal temperature model with inflection (Rosso et al. 1993), 0 outside
   [t_min, t_max], 1 at t_opt.
 * f_I: light response with photoinhibition (Bernard & Remond 2012 form; "Model 2"
   in Schwaderer et al. 2011): rises with initial slope set by i_k, is 1 at i_opt,
   then declines slowly in bright light.
+* <f_I(I(z))>: self-shading. Light fades with depth by Beer-Lambert,
+  I(z) = I0 * exp(-k * X * z), and the light response is averaged over the light
+  path, so a dense culture grows as if most cells sat in the dark.
 * f_pH: the pH response, passed in as ``ph_response`` (see ``algae_sim.carbon``);
   1.0 means pH is not modelled.
-* logistic term: crude stand-in for self-shading and nutrient limits.
+* logistic term: crude stand-in for nutrient limits.
 * loss: basal maintenance/death, plus heat stress above t_max.
 
 Default values are drawn from published Chlorella vulgaris literature (sources in
@@ -19,6 +22,7 @@ not a fit to one strain, and the model itself is still not validated.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -37,6 +41,13 @@ class GrowthParams:
     carrying_capacity_g_per_l: float = 2.3  # lab batch with CO2 (Griffiths 2011)
     basal_loss_per_h: float = 0.007  # maintenance, C. sorokiniana (Kliphuis et al. 2011)
     heat_stress_loss_per_h_per_c: float = 0.05  # illustrative
+    # Effective light extinction per gram of dry biomass, PAR: absorption 227 m2/kg
+    # plus back-scattering 0.0008 x 801 m2/kg (Kuhfuss et al. 2022, C. vulgaris).
+    # 0 switches self-shading off.
+    extinction_m2_per_g: float = 0.228
+    # Depth of culture the light crosses: a property of the simulated reactor, not
+    # of the alga. 5 cm is typical of a lab flat-panel photobioreactor (illustrative).
+    light_path_m: float = 0.05
 
     def __post_init__(self) -> None:
         if not self.t_min_c < self.t_opt_c < self.t_max_c:
@@ -45,6 +56,8 @@ class GrowthParams:
             raise ValueError("mu_max, i_opt and i_k must be positive")
         if self.carrying_capacity_g_per_l <= 0:
             raise ValueError("carrying capacity must be positive")
+        if self.extinction_m2_per_g < 0 or self.light_path_m <= 0:
+            raise ValueError("extinction must be >= 0 and the light path positive")
 
 
 def temperature_factor(temperature_c: float, p: GrowthParams) -> float:
@@ -75,6 +88,29 @@ def light_factor(intensity_umol_m2_s: float, p: GrowthParams) -> float:
     return i / (i + p.i_k_umol_m2_s * (i / p.i_opt_umol_m2_s - 1.0) ** 2)
 
 
+SHADING_LAYERS = 16  # midpoint layers across the light path; tests check accuracy
+
+
+def shaded_light_factor(
+    intensity_umol_m2_s: float, biomass_g_per_l: float, p: GrowthParams
+) -> float:
+    """Light response averaged over the light path of a self-shading culture.
+
+    Averages the light *response* layer by layer rather than responding to the
+    average light: the response is curved, so surface cells can be over-lit while
+    deep cells starve, and averaging the light first would hide both.
+    """
+    # k [m2/g] * X [g/L] * 1000 [L/m3] = attenuation per metre of culture.
+    attenuation = p.extinction_m2_per_g * biomass_g_per_l * 1000.0
+    if attenuation * p.light_path_m < 1e-9:
+        return light_factor(intensity_umol_m2_s, p)
+    dz = p.light_path_m / SHADING_LAYERS
+    return sum(
+        light_factor(intensity_umol_m2_s * math.exp(-attenuation * (i + 0.5) * dz), p)
+        for i in range(SHADING_LAYERS)
+    ) / SHADING_LAYERS
+
+
 def gross_rate_per_h(
     biomass_g_per_l: float,
     temperature_c: float,
@@ -91,7 +127,7 @@ def gross_rate_per_h(
     return (
         p.mu_max_per_h
         * temperature_factor(temperature_c, p)
-        * light_factor(intensity_umol_m2_s, p)
+        * shaded_light_factor(intensity_umol_m2_s, biomass_g_per_l, p)
         * ph_response
         * crowding
     )

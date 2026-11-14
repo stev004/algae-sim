@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Progress](progress.md)
 
-**The model is educational and not validated.** An out-of-sample check against a real *C. vulgaris* experiment fails: the model grows about twice as fast and prefers warmer temperatures than that strain ([validation.md](validation.md)). Growth parameters come from published *Chlorella vulgaris* literature (see [Where the numbers come from](#where-the-numbers-come-from)); values without a source are marked illustrative.
+**The model is educational and not validated.** An out-of-sample check against a real *C. vulgaris* experiment ([validation.md](validation.md)): with self-shading the typical growth rate is about right for a plausible reactor depth, but the model prefers warmer temperatures than that strain. Growth parameters come from published *Chlorella vulgaris* literature (see [Where the numbers come from](#where-the-numbers-come-from)); values without a source are marked illustrative.
 
 ## Thermal (`thermal.py`)
 
@@ -14,12 +14,13 @@ C = 4180 J/K (about 1 L of water), P = 100 W heater, K = 5 W/K loss to a 20 °C 
 
 ## Growth (`growth.py`)
 
-    dX/dt = μmax · f_T(T) · f_I(I) · f_pH(pH) · X · (1 − X/Xmax) − loss(T) · X
+    dX/dt = μmax · f_T(T) · ⟨f_I(I(z))⟩ · f_pH(pH) · X · (1 − X/Xmax) − loss(T) · X
 
 - **f_T**: cardinal temperature model with inflection (Rosso et al., 1993). It's zero at or below 2.2 °C and at or above 42.8 °C, and 1 at the 28.9 °C optimum.
 - **f_I**: light curve with photoinhibition, f(I) = I / (I + I_k·(I/I_opt − 1)²) (Bernard & Rémond 2012 form; Schwaderer et al. 2011 "Model 2"). It's 1 at I_opt = 142 µmol/m²/s, with I_k = μmax/α = 23.5 µmol/m²/s, and keeps 0.84 of its best at 400 µmol/m²/s.
 - **f_pH**: cardinal pH model (Rosso et al., 1995). It's zero at or below pH 3 and at or above 9, and 1 at the pH 7.5 optimum (about 0.9 at 6.5 and 0.73 at 8.5), from *C. vulgaris* measurements (Choi & Lee 2011). The device's own low-pH trip at 5.5 is a protection limit, separate from the biology. The fall-off at high pH also stands in for carbon limitation.
-- **Crowding**: logistic limit Xmax = 2.3 g/L, a crude stand-in for self-shading and nutrients.
+- **Self-shading**: light fades with depth, I(z) = I₀·exp(−k·X·z) (Beer–Lambert), and f_I is averaged layer by layer across the light path L, so dense cultures grow as if most cells sat in the dark. k = 0.228 m²/g (*C. vulgaris*, measured); L = 5 cm (a typical lab flat panel; illustrative, a property of the simulated reactor). Because the light curve is non-linear, the response is averaged rather than the light. A consequence is that brighter light helps dense cultures even past the dilute optimum.
+- **Crowding**: logistic limit Xmax = 2.3 g/L, a crude stand-in for nutrient limits.
 - **Loss**: 0.007 /h maintenance, plus 0.05 /h per °C above 42.8 °C (heat stress, illustrative). The heater can't reach 42.8 °C, so heat stress only matters in tests.
 - μmax = 0.08 /h (about 1.9 per day), starting biomass 0.05 g/L, batch length 36 h.
 
@@ -62,6 +63,8 @@ Values are literature-typical for *Chlorella vulgaris*, pooled across strains an
 | CO₂ per g biomass | 1.83 g/g | Chisti 2007, *Biotechnol. Adv.* 25:294, doi:10.1016/j.biotechadv.2007.02.001 (about 50 % carbon); *C. vulgaris* measured at 48 % (Griffiths 2011 thesis) | High for nitrogen-replete cultures (±20 % with nitrogen status) |
 | OD750 per g/L | 3.2 | Griffiths et al. 2011, *J. Microbiol. Methods* 85:119, doi:10.1016/j.mimet.2011.02.005 | Medium: calibrations vary with pigment and instrument |
 | Xmax | 2.3 g/L | Griffiths 2011 thesis: lab airlift reactor, 0.29 % CO₂, 250 µmol/m²/s | Medium |
+| Light extinction k | 0.228 m²/g | Kuhfuß et al. 2022, *Bioprocess Biosyst. Eng.* 45:15, doi:10.1007/s00449-021-02627-2 (open access), Table 3: *C. vulgaris*, absorption 227 m²/kg plus back-scattering 0.0008 × 801 m²/kg. Cross-check: Pruvost et al. 2024, doi:10.1016/j.algal.2024.103517, reports 270 m²/kg (not read in full here) | Medium–high; varies with pigment content |
+| Light path L | 5 cm | Illustrative: geometry of the simulated reactor | n/a |
 | Maintenance loss | 0.007 /h | Kliphuis et al. 2011, doi:10.1007/s10811-010-9614-7, measured on *C. sorokiniana* | Low–medium (close relative, 37 °C) |
 | pH_min / pH_opt / pH_max | 3.0 / 7.5 / 9.0 | Choi & Lee 2011, *J. Korean Soc. Environ. Eng.* 33:511, doi:10.4491/KSEE.2011.33.7.511: growth at pH 3–9, best at 7–7.5, cells died at 3 and 9; Rachlin & Grosso 1991, doi:10.1007/BF01065839, optimum 7.5–8.0 | Medium: one study for the limits |
 
@@ -73,5 +76,5 @@ Values are literature-typical for *Chlorella vulgaris*, pooled across strains an
 - **Temperature in a stressed reactor.** Serra-Maia et al. 2016, *Algal Res.* 18:352, doi:10.1016/j.algal.2016.06.016: strain CCAP 211/11B in a bubble-column photobioreactor peaked near 23 °C and stopped growing by 30 °C. The authors attribute this to reactor stress (high oxygen, mortality), since cells in gentler conditions survived 35 °C. Their measured carbon content, 48.5–53 % of dry weight, supports the CO₂ value.
 - **Cross-check, other species.** Bernard & Rémond 2012, doi:10.1016/j.biortech.2012.07.022, fit 5.2 / 38.7 / 45.8 °C for a high-temperature *C. pyrenoidosa* strain.
 
-**Not modelled:** light through a dense culture (Yun & Park 2001, doi:10.1007/s002530100639, has *C. vulgaris* attenuation data).
+**Not modelled:** nitrogen limitation, dissolved oxygen, mixing. Self-shading uses a single PAR-averaged extinction coefficient, not a spectral model.
 - **Illustrative, no source sought:** the carbonate buffer, air-equilibrium pH, heat-stress loss, thermal and instrument values.

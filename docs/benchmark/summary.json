@@ -2,18 +2,18 @@
   "arms": {
     "optimiser": {
       "runs": 30,
-      "median_hypervolume": 0.28257786077009117,
-      "median_best_od": 1.563
+      "median_hypervolume": 0.2212211974835433,
+      "median_best_od": 1.2541666666666667
     },
     "random": {
       "runs": 30,
-      "median_hypervolume": 0.2714999899963463,
-      "median_best_od": 1.5790000000000002
+      "median_hypervolume": 0.21493668256478976,
+      "median_best_od": 1.2691666666666666
     },
     "grid": {
       "runs": 30,
-      "median_hypervolume": 0.24947938827301241,
-      "median_best_od": 1.4861666666666666
+      "median_hypervolume": 0.19522789917883965,
+      "median_best_od": 1.2176666666666667
     }
   },
   "comparisons": [
@@ -22,40 +22,40 @@
       "baseline": "random",
       "pairs": 30,
       "optimiser_wins": 22,
-      "median_difference": 0.006854936479807616,
-      "ci_low": 0.0010819930778033227,
-      "ci_high": 0.02209065184096165,
-      "p_value": 0.0002999850007499625
+      "median_difference": 0.006178148379763618,
+      "ci_low": 0.0022796500013859966,
+      "ci_high": 0.01139110670992842,
+      "p_value": 0.00034998250087495624
     },
     {
       "metric": "best_od",
       "baseline": "random",
       "pairs": 30,
-      "optimiser_wins": 15,
-      "median_difference": -0.0043333333333333,
-      "ci_low": -0.06433333333333335,
-      "ci_high": 0.02833333333333332,
-      "p_value": 0.7982600869956502
+      "optimiser_wins": 11,
+      "median_difference": -0.0076666666666667105,
+      "ci_low": -0.04300000000000004,
+      "ci_high": 0.009000000000000008,
+      "p_value": 0.30518474076296187
     },
     {
       "metric": "hypervolume",
       "baseline": "grid",
       "pairs": 30,
       "optimiser_wins": 30,
-      "median_difference": 0.03340345585480044,
-      "ci_low": 0.02786731138898424,
-      "ci_high": 0.038989599318160414,
+      "median_difference": 0.02629753463127564,
+      "ci_low": 0.02389652502929815,
+      "ci_high": 0.027419721876156836,
       "p_value": 4.999750012499375e-05
     },
     {
       "metric": "best_od",
       "baseline": "grid",
       "pairs": 30,
-      "optimiser_wins": 23,
-      "median_difference": 0.07550000000000001,
-      "ci_low": 0.028833333333333377,
-      "ci_high": 0.11533333333333329,
-      "p_value": 0.00014999250037498125
+      "optimiser_wins": 26,
+      "median_difference": 0.032333333333333325,
+      "ci_low": 0.022166666666666668,
+      "ci_high": 0.04483333333333328,
+      "p_value": 4.999750012499375e-05
     }
   ]
 }

@@ -63,8 +63,10 @@ def test_growth_is_best_near_the_optimum():
         ).final_true_biomass_g_per_l
 
     assert od(30, 150) > od(22, 150)
-    assert od(30, 150) > od(30, 400)
     assert od(30, 150) > od(36, 150)
+    # Self-shading: as the culture thickens, light past the dilute optimum (142)
+    # reaches the starved lower layers, so a whole batch grows more in brighter light.
+    assert od(30, 400) > od(30, 150) > od(30, 50)
 
 
 def test_energy_rises_with_setpoint():

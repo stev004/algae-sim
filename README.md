@@ -18,7 +18,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
-  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.52" src="docs/images/progress.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.24" src="docs/images/progress.png">
 </picture>
 
 <picture>
@@ -31,11 +31,11 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
   <img alt="Pass or fail for every reactor in every experiment, with the reason for each failure" src="docs/images/qc.png">
 </picture>
 
-> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**: [checked against a real experiment](docs/validation.md), it grows about twice as fast as the measured strain and prefers warmer temperatures. Nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
+> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**: [checked against a real experiment](docs/validation.md), it gets the typical growth rate about right once self-shading is included, but prefers warmer temperatures than the measured strain. Nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
 ## Benchmark: does the optimiser help?
 
-30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.5 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
+30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.9 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. The result held before and after the growth model gained self-shading. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
 
 ## Quick start
 

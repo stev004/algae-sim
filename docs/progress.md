@@ -4,9 +4,17 @@
 
 ## Current handoff — 2026-11-11
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)), and the growth model has been checked against a real experiment; it fails, for documented reasons ([validation.md](validation.md)). 127 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)), and the growth model, now with self-shading, has been checked against a real experiment: the typical growth rate is about right, but the temperature curve doesn't fit that strain ([validation.md](validation.md)). 131 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
 
 Next: the Azure version of the pipeline, with Steven driving (account, region, Data Explorer vs SQL, cost guard and teardown; see [data-pipeline.md](data-pipeline.md)), then a dashboard and write-up.
+
+## 2026-11-14 — Self-shading
+
+- **Decision (agreed with Steven):** add Beer–Lambert self-shading, but not a carbon limit. The simulated reactor always doses CO₂, so a carbon limit would only fit the validation's air-only case.
+- **Source:** k = 0.228 m²/g from Kuhfuß et al. 2022 (*C. vulgaris*, read and checked), not tuned to the validation data. The light path is 5 cm, illustrative, set before rerunning. The light response is averaged over 16 layers (within 0.002 of a fine reference).
+- **Effect:** dense cultures now need more light; the demo's best culture moved to 278 µmol/m²/s, and ODs are lower and more realistic. All faults still fail QC, and the pipeline still matches.
+- **Validation rerun:** 9 of 12 runs pass at 5 cm (median ratio 1.05×, was 2.1×). The result moves with the unreported vessel depth (5 of 12 at 3 cm, 8 of 12 at 8 cm). The temperature ranking is still backwards (−0.77).
+- **Benchmark rerun:** +2.9 % hypervolume vs random search (22 of 30, p < 0.001), still no denser cultures; +13.5 % vs grid. The conclusion held through the model change.
 
 ## 2026-11-14 — Out-of-sample check against real data
 

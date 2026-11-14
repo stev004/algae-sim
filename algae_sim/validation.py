@@ -18,16 +18,20 @@ tuned to pass:
   ln(X4 / X0) / 4, model against measured. **Pass if within +/-30 %**, the
   typical spread of growth rates for one species between labs.
 * **Measure 2: the whole curve.** Model / measured biomass at days 4, 7 and 14.
-  Late divergence was expected in advance, because the model has no light
-  shading, no carbon limitation under air-only aeration and no nitrogen limit.
+
+Since 2026-11-14 the model includes self-shading, which needs a light path. The
+paper doesn't report one for its 3 L vessel, so the check uses the simulated
+reactor's own 5 cm (set before rerunning) and also reports how the result moves
+across 3-8 cm (``path_sensitivity``). History and results: docs/validation.md.
 """
 
 from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from algae_sim.growth import GrowthParams, temperature_factor
 from algae_sim.reactor import ReactorConfig, run_batch
 
 DAYS = (0, 4, 7, 14)
@@ -76,7 +80,7 @@ class RunCheck:
         return abs(self.rate_ratio - 1) <= TOLERANCE
 
 
-def simulate(run: str) -> RunCheck:
+def simulate(run: str, light_path_m: float | None = None) -> RunCheck:
     temperature, _, measured_mg = PINTO_2026[run]
     measured = tuple(x / 1000 for x in measured_mg)
     result = run_batch(ReactorConfig(
@@ -88,10 +92,24 @@ def simulate(run: str) -> RunCheck:
         start_temperature_c=temperature,
         start_biomass_g_per_l=measured[0],
         telemetry_interval_s=3600,
+        growth=GrowthParams() if light_path_m is None
+        else replace(GrowthParams(), light_path_m=light_path_m),
     ))
     by_hour = {round(s.elapsed_s / 3600): s.true_biomass_g_per_l for s in result.telemetry}
     model = (measured[0], *(by_hour[d * 24] for d in DAYS[1:]))
     return RunCheck(run, temperature, measured, model)
+
+
+def path_sensitivity(
+    paths_m: tuple[float, ...] = (0.03, 0.05, 0.08),
+) -> list[tuple[float, int, float]]:
+    """(light path, runs passing, median early-growth ratio) for each path."""
+    rows = []
+    for path in paths_m:
+        checks = [simulate(run, path) for run in PINTO_2026]
+        rows.append((path, sum(c.passes for c in checks),
+                     statistics.median(c.rate_ratio for c in checks)))
+    return rows
 
 
 def spearman(x: list[float], y: list[float]) -> float:
@@ -125,8 +143,6 @@ def main() -> None:
               f"{c.measured_g_per_l[3]:.2f}/{c.model_g_per_l[3]:.2f}")
     ratios = [c.rate_ratio for c in checks]
     late = [c.model_g_per_l[3] / c.measured_g_per_l[3] for c in checks]
-    from algae_sim.growth import GrowthParams, temperature_factor
-
     rho = spearman([temperature_factor(c.temperature_c, GrowthParams()) for c in checks],
                    [c.measured_rate_per_day for c in checks])
     print(f"\npassed {sum(c.passes for c in checks)} of {len(checks)} runs "
@@ -134,6 +150,9 @@ def main() -> None:
     print(f"median early-growth ratio model/measured: {statistics.median(ratios):.2f}x")
     print(f"median day-14 biomass ratio model/measured: {statistics.median(late):.2f}x")
     print(f"rank correlation, model temperature factor vs measured growth: {rho:+.2f}")
+    print("\nlight path (not reported for the 3 L vessel): runs passing, median ratio")
+    for path, passing, ratio in path_sensitivity():
+        print(f"  {path * 100:.0f} cm: {passing:2d} of {len(checks)}, {ratio:.2f}x")
 
 
 if __name__ == "__main__":

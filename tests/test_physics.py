@@ -55,6 +55,37 @@ class TestGrowth:
         assert light_factor(GP.i_opt_umol_m2_s, GP) == pytest.approx(1.0)
         assert light_factor(400.0, GP) < light_factor(200.0, GP) < 1.0
 
+    def test_shading_is_off_without_extinction_and_bites_as_the_culture_thickens(self):
+        from dataclasses import replace
+
+        from algae_sim.growth import shaded_light_factor
+
+        clear = replace(GP, extinction_m2_per_g=0.0)
+        assert shaded_light_factor(150.0, 1.0, clear) == light_factor(150.0, clear)
+        factors = [shaded_light_factor(150.0, x, GP) for x in (0.01, 0.2, 0.5, 1.0)]
+        assert factors == sorted(factors, reverse=True) and factors[-1] < 0.3
+
+    def test_dense_cultures_need_more_light(self):
+        from algae_sim.growth import shaded_light_factor
+
+        # Dilute: past the optimum, extra light inhibits. Dense: extra light reaches
+        # the starved lower layers, so it helps.
+        assert shaded_light_factor(400.0, 0.01, GP) < shaded_light_factor(150.0, 0.01, GP)
+        assert shaded_light_factor(400.0, 0.5, GP) > shaded_light_factor(150.0, 0.5, GP)
+
+    def test_layer_average_matches_a_fine_reference(self):
+        import math
+
+        from algae_sim.growth import shaded_light_factor
+
+        for biomass in (0.05, 0.5, 2.0):
+            k = GP.extinction_m2_per_g * biomass * 1000
+            fine = sum(
+                light_factor(150.0 * math.exp(-k * (i + 0.5) * GP.light_path_m / 2000), GP)
+                for i in range(2000)
+            ) / 2000
+            assert shaded_light_factor(150.0, biomass, GP) == pytest.approx(fine, abs=0.002)
+
     def test_light_curve_matches_the_fitted_chlorella_data(self):
         # Schwaderer et al. 2011 "Model 2" with C. vulgaris mu_max 0.94 /day,
         # alpha 0.040, I_opt 142.1: rewritten as a fraction of mu_max.

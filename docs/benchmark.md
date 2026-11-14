@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Model](model.md) · [Architecture](architecture.md) · [Progress](progress.md)
 
-**Short answer:** on the simulated *Chlorella* reactor, AutoLab's optimiser finds better trade-offs between growth, energy and CO₂ than random search, by 2.5 % (median). That's small but consistent: it was better in 22 of 30 paired runs. It does not find denser cultures than random search. It beats a fixed grid clearly on both counts. This is a result about a simulator, and the last section says why it may not hold on real hardware.
+**Short answer:** on the simulated *Chlorella* reactor, AutoLab's optimiser finds better trade-offs between growth, energy and CO₂ than random search, by 2.9 % (median). That's small but consistent: it was better in 22 of 30 paired runs. It does not find denser cultures than random search. It beats a fixed grid clearly on both counts. The same conclusion held before and after the growth model gained self-shading, which is a useful robustness check. This is a result about a simulator, and the limits section says why it may not hold on real hardware.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-progress-dark.png">
@@ -36,12 +36,14 @@ Running 90 campaigns takes about 7 minutes on 8 cores.
 
 | Optimiser vs | Score | Optimiser better in | Median difference (95 % CI) | Relative | p |
 |---|---|---|---|---|---|
-| random search | hypervolume | 22 / 30 | +0.0069 (+0.0011 to +0.0221) | +2.5 % | < 0.001 |
-| random search | best OD750 | 15 / 30 | −0.004 (−0.064 to +0.028) | −0.3 % | 0.80 |
-| grid | hypervolume | 30 / 30 | +0.033 (+0.028 to +0.039) | +13.4 % | < 0.001 |
-| grid | best OD750 | 23 / 30 | +0.076 (+0.029 to +0.115) | +5.1 % | < 0.001 |
+| random search | hypervolume | 22 / 30 | +0.0062 (+0.0023 to +0.0114) | +2.9 % | < 0.001 |
+| random search | best OD750 | 11 / 30 | −0.008 (−0.043 to +0.009) | −0.6 % | 0.31 |
+| grid | hypervolume | 30 / 30 | +0.026 (+0.024 to +0.027) | +13.5 % | < 0.001 |
+| grid | best OD750 | 26 / 30 | +0.032 (+0.022 to +0.045) | +2.7 % | < 0.001 |
 
 Relative differences are against the baseline's median. The three p-values below 0.001 stay below it after a Holm correction for the four tests. "< 0.001" means at or near the resolution of 20,000 permutations.
+
+**Robustness to the model.** These numbers are from the growth model with self-shading (added 2026-11-14). Before shading, the same benchmark gave +2.5 % against random search (22 of 30, p < 0.001) with no difference in best OD, and +13.4 % against the grid. The conclusion didn't depend on that change to the biology.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-pairs-dark.png">
@@ -54,12 +56,12 @@ The optimiser spends its first 8 of 18 experiments sampling at random. Rerunning
 
 | Optimiser (4 start-up) vs | Score | Optimiser better in | Median difference (95 % CI) | Relative | p |
 |---|---|---|---|---|---|
-| random search | hypervolume | 25 / 30 | +0.015 (+0.009 to +0.022) | +5.5 % | < 0.001 |
-| random search | best OD750 | 15 / 30 | +0.001 (−0.066 to +0.041) | +0.1 % | 0.99 |
-| grid | hypervolume | 30 / 30 | +0.037 (+0.034 to +0.041) | +14.7 % | < 0.001 |
-| grid | best OD750 | 26 / 30 | +0.080 (+0.064 to +0.093) | +5.4 % | < 0.001 |
+| random search | hypervolume | 26 / 30 | +0.0078 (+0.0054 to +0.0126) | +3.6 % | < 0.001 |
+| random search | best OD750 | 8 / 30 | −0.006 (−0.036 to −0.002) | −0.5 % | 0.37 |
+| grid | hypervolume | 30 / 30 | +0.028 (+0.024 to +0.030) | +14.1 % | < 0.001 |
+| grid | best OD750 | 27 / 30 | +0.042 (+0.027 to +0.051) | +3.4 % | < 0.001 |
 
-The edge over random search roughly doubles, from 2.5 % to 5.5 %, and its interval moves further from zero. Comparing the two optimiser settings directly, run for run, 4 start-up experiments beat 8 in 14 of 30 runs (p = 0.13), so the improvement is suggestive rather than established. The 8-experiment setting stays the headline because it was chosen before the results were seen. Choosing the setting that happened to score best would overstate the effect.
+The edge over random search grows from 2.9 % to 3.6 % (26 of 30 runs). Comparing the two optimiser settings directly, run for run, 4 start-up experiments beat 8 in 20 of 30 runs (p = 0.09), so the improvement is suggestive rather than established. (Before self-shading this comparison was 2.5 % → 5.5 %, p = 0.13.) On best OD the bootstrap interval only just excludes zero while the permutation test doesn't (p = 0.37). Either way the difference is half a percent. The 8-experiment setting stays the headline because it was chosen before the results were seen. Choosing the setting that happened to score best would overstate the effect.
 
 Reproduce with `--startup 4` on both `run` (optimiser arm only) and `analyse`.
 
@@ -68,21 +70,21 @@ Reproduce with `--startup 4` on both `run` (optimiser arm only) and `analyse`.
 - **The optimiser learns something, but late, and only about the trade-off.**
   - The curves overlap during the 8 random start-up experiments, as they should. Once the optimiser starts choosing, it pulls ahead on hypervolume and stays ahead.
   - It does this by finding conditions that use less energy and CO₂ for similar growth. That is what it was asked to do.
-  - It doesn't find denser cultures than random search: both end near OD 1.57.
+  - It doesn't find denser cultures than random search: both end near OD 1.26.
 - **Random search is a strong baseline here.**
   - The growth surface is smooth, with a single broad peak (cardinal temperature, light and pH curves).
   - 18 experiments in three dimensions are enough for random points to land near it.
-  - A 2.5 % edge is the honest size of the effect.
+  - An edge of about 3 % is the honest size of the effect.
 - **The grid is the weakest method, mostly by design.**
   - Its 18 points are fixed, so it can't move towards the optimum.
-  - Its lexicographic order leaves its better points until late; its curves step up only after experiment 10.
+  - Its lexicographic order leaves its better points until late; its best culture typically appears at experiment 17 of 18.
   - Its best culture is limited by where its levels happen to fall.
   - A grid with a better order or better levels would do better. That's also what makes grids fragile.
 
 ## Limits: why this may not hold on real hardware
 
-- **It's a simulator, and a check against a real experiment fails.** The growth model uses literature-typical *C. vulgaris* values ([model.md](model.md)). Against an independent experiment it grows about twice as fast as the real strain and ranks temperatures nearly backwards ([validation.md](validation.md)). On that strain's real surface, the best conditions would lie elsewhere. The surface here is also smoother and better behaved than biology.
-- **The noise is mild and well behaved:** Gaussian sensor noise and no drift between runs. Real cultures vary between inocula, batches of medium and seasons. That noise would blur small differences like the 2.5 % edge over random search.
+- **It's a simulator, and a check against a real experiment shows a wrong temperature curve.** The growth model uses literature-typical *C. vulgaris* values ([model.md](model.md)). Against an independent experiment, with self-shading, it gets the typical growth rate about right. But it ranks temperatures nearly backwards for that strain, which grew best cool ([validation.md](validation.md)). On that strain's real surface, the best conditions would lie elsewhere. The surface here is also smoother and better behaved than biology.
+- **The noise is mild and well behaved:** Gaussian sensor noise and no drift between runs. Real cultures vary between inocula, batches of medium and seasons. That noise would blur small differences like the 3 % edge over random search.
 - **There are no failures.** Real campaigns lose experiments to contamination, sensor faults and operator error, and every lost experiment costs a search method part of its budget.
 - **One strain, one budget, one search space.** The result could change with more dimensions (nutrients, mixing), a bigger or smaller budget, or a different start-up share. Here 8 of 18 experiments are random, which limits how much the optimiser can learn.
 - **The scoring depends on choices.** Hypervolume depends on the reference point. It was fixed from device limits before the runs, but other defensible choices would change the relative numbers, though not which method wins.

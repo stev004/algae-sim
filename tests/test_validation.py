@@ -31,8 +31,15 @@ def test_documented_result_still_holds():
     """Pins the findings in docs/validation.md. If a model change moves these,
     rerun `python -m algae_sim.validation` and update the doc, not this test alone."""
     cold, mid, hot = simulate("E4"), simulate("E2"), simulate("E3")
-    for check in (cold, mid, hot):
-        assert not check.passes and check.rate_ratio > 1.5  # model grows too fast
-    # The strain grew best cold; the model's temperature curve favours warm.
+    # With self-shading the typical run is about right...
+    assert mid.passes
+    # ...but the temperature extremes go opposite ways: this strain likes it cooler
+    # than the pooled temperature curve says.
+    assert hot.rate_ratio > 1.3 and cold.rate_ratio < 0.8
     assert cold.measured_rate_per_day > hot.measured_rate_per_day
     assert cold.model_rate_per_day < hot.model_rate_per_day
+
+
+def test_result_depends_on_the_unreported_light_path():
+    shallow, deep = simulate("E2", 0.02), simulate("E2", 0.10)
+    assert shallow.rate_ratio > 1.3 > 1.0 > 0.8 > deep.rate_ratio
