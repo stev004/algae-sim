@@ -4,9 +4,18 @@
 
 ## Current handoff — 2026-11-11
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)). 123 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)), and the growth model has been checked against a real experiment; it fails, for documented reasons ([validation.md](validation.md)). 127 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
 
 Next: the Azure version of the pipeline, with Steven driving (account, region, Data Explorer vs SQL, cost guard and teardown; see [data-pipeline.md](data-pipeline.md)), then a dashboard and write-up.
+
+## 2026-11-14 — Out-of-sample check against real data
+
+- **Decision:** test the growth model against an independent experiment, with the rules fixed in advance: no fitting; pass if the early growth rate is within ±30 %. The data are Pinto et al. 2026, *Mar. Drugs* 24:124 (CC BY): *C. vulgaris* CCAP 211/11B, 12 batch runs at 18–32 °C, 55 µmol/m²/s, air only.
+- **Result: fails.**
+  - 0 of 12 runs pass; the model grows a median 2.1× too fast early, and its day-14 biomass is 2.3× too high.
+  - It ranks temperatures nearly backwards for this strain (rank correlation −0.77): the strain grew best at 18–20 °C.
+  - Likely causes: no light shading, no carbon limit under air-only aeration, no nitrogen limit, and a strain cooler-loving than the pooled parameters (consistent with Serra-Maia 2016, same strain).
+- **Decision:** document rather than tune. A fix needs new mechanisms checked against a different dataset. The benchmark's limits now cite this.
 
 ## 2026-11-13 — Optimiser benchmark
 

@@ -81,7 +81,7 @@ Reproduce with `--startup 4` on both `run` (optimiser arm only) and `analyse`.
 
 ## Limits: why this may not hold on real hardware
 
-- **It's a simulator.** The growth model uses literature-typical *C. vulgaris* values ([model.md](model.md)) but is not validated against a real reactor. The response surface is smoother and better behaved than biology.
+- **It's a simulator, and a check against a real experiment fails.** The growth model uses literature-typical *C. vulgaris* values ([model.md](model.md)). Against an independent experiment it grows about twice as fast as the real strain and ranks temperatures nearly backwards ([validation.md](validation.md)). On that strain's real surface, the best conditions would lie elsewhere. The surface here is also smoother and better behaved than biology.
 - **The noise is mild and well behaved:** Gaussian sensor noise and no drift between runs. Real cultures vary between inocula, batches of medium and seasons. That noise would blur small differences like the 2.5 % edge over random search.
 - **There are no failures.** Real campaigns lose experiments to contamination, sensor faults and operator error, and every lost experiment costs a search method part of its budget.
 - **One strain, one budget, one search space.** The result could change with more dimensions (nutrients, mixing), a bigger or smaller budget, or a different start-up share. Here 8 of 18 experiments are random, which limits how much the optimiser can learn.

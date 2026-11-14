@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Progress](progress.md)
 
-**The model is educational and not validated.** Growth parameters come from published *Chlorella vulgaris* literature (see [Where the numbers come from](#where-the-numbers-come-from)); values without a source are marked illustrative.
+**The model is educational and not validated.** An out-of-sample check against a real *C. vulgaris* experiment fails: the model grows about twice as fast and prefers warmer temperatures than that strain ([validation.md](validation.md)). Growth parameters come from published *Chlorella vulgaris* literature (see [Where the numbers come from](#where-the-numbers-come-from)); values without a source are marked illustrative.
 
 ## Thermal (`thermal.py`)
 

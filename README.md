@@ -31,7 +31,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
   <img alt="Pass or fail for every reactor in every experiment, with the reason for each failure" src="docs/images/qc.png">
 </picture>
 
-> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**; nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
+> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**: [checked against a real experiment](docs/validation.md), it grows about twice as fast as the measured strain and prefers warmer temperatures. Nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
 ## Benchmark: does the optimiser help?
 
@@ -108,6 +108,7 @@ The injected faults in the demo config:
 |---|---|
 | `algae_sim/thermal.py` | Heat balance of one well-mixed vessel |
 | `algae_sim/growth.py` | Educational growth model: temperature, light and pH responses, photoinhibition, crowding, heat-stress death |
+| `algae_sim/validation.py` | Out-of-sample check of the growth model against a published *C. vulgaris* experiment |
 | `algae_sim/carbon.py` | Simplified pH/CO2 model: photosynthetic uptake, CO2 dosing, gas exchange; cardinal pH growth response |
 | `algae_sim/instruments.py` | Noisy, quantised temperature, pH and OD750 sensors with dropouts; a heater and a CO2 valve that can fail |
 | `algae_sim/control.py` | Hysteresis thermostat with fail-safe and over-temperature trip; pH controller with fail-safe and low/high pH trips |
@@ -117,7 +118,7 @@ The injected faults in the demo config:
 | `algae_sim/pipeline/` | Data pipeline: parse/validate, raw + clean stores, ingest endpoint, uploader, per-hold analysis |
 | `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign charts (`plot_campaign.py`); the optimiser benchmark (`benchmark.py`); an earlier database-free optimiser loop (`campaign.py`) |
 | `configs/` | Culture campaign and installation policy |
-| `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [optimiser benchmark](docs/benchmark.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
+| `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [optimiser benchmark](docs/benchmark.md), [validation against real data](docs/validation.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
 
 ## Roadmap
 
