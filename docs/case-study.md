@@ -76,6 +76,15 @@ Built in the Azure portal by me, at **£0**: the free account's hard spending li
   <img alt="Azure setup: Microsoft Entra ID signs in the laptop, with no keys anywhere. The laptop uploader sends raw batches to Blob Storage (role: write blobs only) and clean rows to Data Explorer (role: ingest and read only), where tables feed dedupe views and the report. Cost £0." src="images/diagram-azure.svg">
 </picture>
 
+**The data, queried in the cloud.** `HoldSummary()` charted directly in Data Explorer: final OD750 for every reactor in every experiment of the demo campaign. The injected faults show up as the odd bar out:
+- experiment 5, reactor-2: heater failure;
+- experiment 9, reactor-3: culture crash;
+- experiment 11, reactor-1: low-pH trip after a stuck CO₂ valve.
+
+Experiment 6's heater faults lowered reactors 1 and 2 only slightly, but QC still caught them on temperature tracking.
+
+![Column chart from Azure Data Explorer: final OD750 per experiment (0 to 14) for reactors 1, 2 and 3. Most triplets are close together; experiment 9 reactor-3 is near zero (culture crash), experiment 11 reactor-1 is low (pH trip), and experiment 5 reactor-2 is lower (heater failure).](images/azure-data-explorer-chart.png)
+
 **Decisions, and what building it taught me:**
 - **No Azure Function.** The free trial refuses the Flex Consumption plan, even though the docs imply otherwise, and the older plan is retired for Python. So the laptop uploader does the Function's job, and the parse rules are shared code, not a copy.
 - **Queued, not streaming, ingestion.** The free cluster refused streaming writes (403) even with the right role. I diagnosed it by probing each write path with the same identity: reads, inline ingestion and queued ingestion worked, and streaming didn't.
