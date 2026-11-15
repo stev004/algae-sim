@@ -57,11 +57,15 @@ class Uploader:
         cursor_file: Path | None = None,
         batch_lines: int = DEFAULT_BATCH_LINES,
         timeout_s: float = 10.0,
+        sender: Callable[[bytes], dict] | None = None,
     ) -> None:
+        """``sender`` replaces the HTTP POST (for example ``AzureSink.send``). It must
+        return the ingest's reply shape and raise ``IngestUnavailable`` to be retried."""
         self.capture_file = Path(capture_file)
         self.cursor_file = cursor_file or self.capture_file.parent / CURSOR_FILE
         self.batch_lines = batch_lines
         self.timeout_s = timeout_s
+        self.sender = sender
         parts = urlsplit(url)
         self.host = parts.hostname or "127.0.0.1"
         self.port = parts.port or 80
@@ -111,7 +115,7 @@ class Uploader:
         batch, end, rest = self._read_pending()
         if not batch:
             return None
-        reply = self._post(batch)
+        reply = (self.sender or self._post)(batch)
         self._save_cursor(end)  # only now is the batch acknowledged
         return Sent(
             lines=int(reply["lines"]),

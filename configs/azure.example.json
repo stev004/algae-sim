@@ -1,0 +1,7 @@
+{
+  "tenant_id": "00000000-0000-0000-0000-000000000000",
+  "storage_account": "stalgaesimNNNN",
+  "cluster_uri": "https://kvc-xxxxxxxx.northeurope.kusto.windows.net",
+  "container": "raw",
+  "database": "algae"
+}

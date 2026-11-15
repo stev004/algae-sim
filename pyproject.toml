@@ -17,6 +17,12 @@ dependencies = []  # the reactor core is standard-library only
 # [tool.uv.sources]) so ongoing AutoLab work cannot change this project underneath it.
 autolab = ["autonomous-lab>=0.5"]
 plot = ["matplotlib>=3.9,<4"]
+azure = [
+    "azure-identity>=1.27.0",
+    "azure-kusto-data>=6.0.4",
+    "azure-kusto-ingest>=6.0.4",
+    "azure-storage-blob>=12.26.0",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.3,<9", "ruff>=0.9,<1"]

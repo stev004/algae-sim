@@ -55,6 +55,10 @@ def _parser() -> argparse.ArgumentParser:
     upload = pipeline_sub.add_parser("upload", help="ship a device capture log to the ingest")
     upload.add_argument("--capture", type=Path, required=True, help="the device's capture DIR")
     upload.add_argument("--url", default="http://127.0.0.1:8760")
+    upload.add_argument(
+        "--azure", type=Path, metavar="CONFIG",
+        help="send to Azure instead (Blob + Data Explorer), e.g. configs/azure.local.json",
+    )
     upload.add_argument("--follow", action="store_true", help="keep watching for new lines")
     upload.add_argument(
         "--exit-when-idle", type=float, default=None, metavar="SECONDS",
@@ -172,7 +176,12 @@ def pipeline_main(args: argparse.Namespace) -> None:
         from algae_sim.device.service import CAPTURE_FILE
         from algae_sim.pipeline.uploader import Uploader
 
-        uploader = Uploader(args.capture / CAPTURE_FILE, args.url)
+        sender = None
+        if args.azure:
+            from algae_sim.azure.sink import AzureConfig, AzureSink
+
+            sender = AzureSink(AzureConfig.load(args.azure)).send
+        uploader = Uploader(args.capture / CAPTURE_FILE, args.url, sender=sender)
         if args.replay:
             uploader.reset()
         try:
