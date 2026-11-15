@@ -4,11 +4,32 @@
 
 ## Current handoff — 2026-11-15
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)), and the growth model, now with self-shading, has been checked against a real experiment: the typical growth rate is about right, but the temperature curve doesn't fit that strain ([validation.md](validation.md)). 140 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
+**State.** algae-sim is complete as a portfolio piece. The [case study](case-study.md) is the entry point.
+- It speaks AutoLab culture contract v2, pinned to AutoLab `26bfc8b`.
+- Growth uses cited *C. vulgaris* values, with self-shading ([model.md](model.md)).
+- Against a real experiment, 9 of 12 runs pass at a 5 cm light path, but the temperature ranking is backwards ([validation.md](validation.md)).
+- Benchmark: +2.9 % trade-off over random search, 22 of 30 runs, p < 0.001 ([benchmark.md](benchmark.md)).
+- The data pipeline runs locally and on Azure at £0 ([data-pipeline.md](data-pipeline.md)).
+- 140 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run.
 
-The data pipeline also runs on Azure, at £0: raw batches go to Blob Storage, clean rows to the free Data Explorer cluster, and the cloud report matches the local one ([data-pipeline.md](data-pipeline.md)). Resources: resource group `rg-algae-sim-pipeline` (UK South) with storage account `stalgaesim1107`, plus the free Data Explorer cluster (database `algae`). The free account's 30 days end around 2026-12-14; decide then whether to let it lapse or upgrade.
+**Azure resources, all Steven's:**
+- resource group `rg-algae-sim-pipeline` (UK South) on a free-trial subscription, holding storage account `stalgaesim1107` and its private container `raw`;
+- the Data Explorer free cluster, database `algae`, with tables, views and functions from `algae_sim/azure/schema.kql`;
+- the Entra user `aaduser=0f45a5f8-…;0235cd2d-…`, which has Ingestor and Viewer on `algae`;
+- local addresses in `configs/azure.local.json` (git-ignored).
 
-The one-page [case study](case-study.md) (architecture, results, Azure setup, a chart queried in Data Explorer) is done. **The project is complete as a portfolio piece.** Steven's focus moves to lab-automation roles and an open-source lab-automation contribution (PyLabRobot is the leading candidate). Optional later: a small real-hardware loop behind the same device contract.
+**Open threads:**
+- **Azure free account lapses around 2026-12-14.** Steven moves next. Default: let it lapse; the subscription is disabled and nothing is charged. The storage account and blobs then go, which is fine, since they're regenerable from `runs/pipeline-demo`. The Data Explorer free cluster is separate and lasts a year, unless Microsoft withdraws the free tier. Optional tidy-up: delete `rg-algae-sim-pipeline` in the portal. If he upgrades instead, add a £5 budget alert first.
+- **Open-source lab-automation contribution.** Steven is taking this to his separate Bio-OSS session, not this repo. Leading candidate: PyLabRobot. Starter issues: #1255–1260 (docs), #1243 (good first issue). Stronger second contribution: #1376, per-protocol time and consumption tracking. Nothing to do here.
+- **Applications for lab-automation roles.** Steven moves next, with the `apply` skill, using the case study as the centrepiece.
+- **Optional model work, only on Steven's agreement:** a strain-specific temperature curve and a nitrogen limit, each checked against a dataset it wasn't fitted to. Also optional: a small real-hardware loop behind the same device contract.
+
+## 2026-11-15 — Case study and diagrams
+
+- Added `docs/case-study.md`, linked at the top of the README: the system, one experiment, results (benchmark, validation, pipeline) and the Azure setup.
+- **Decision (Steven):** the first Mermaid diagrams were too busy. They were replaced by two house-style SVGs (loop, Azure) in light and dark, drawn by `scripts/draw_diagrams.py` and checked by rendering before committing.
+- Added a chart queried live in Data Explorer (`HoldSummary()` rendered as a column chart), cropped to hide account details: `docs/images/azure-data-explorer-chart.png`.
+- Fixed stale architecture notes: seeding, and Azure no longer "planned". Corrected an overstated claim; it's AutoLab's *source* that has no simulator-specific code (checked).
 
 ## 2026-11-15 — Azure pipeline
 
@@ -53,6 +74,11 @@ The one-page [case study](case-study.md) (architecture, results, Azure setup, a 
   - Against the grid, it gives +13.4 % hypervolume (30 of 30) and +5.1 % best OD.
   - On this smooth simulated surface random search is a strong baseline. Limits are in benchmark.md.
 - **Sensitivity:** with 4 random start-up experiments instead of 8, the edge over random search grows to +5.5 % hypervolume (25 of 30). Comparing 4 against 8 directly is not significant (p = 0.13). The pre-chosen 8 stays the headline.
+
+## 2026-11-11 — Charts redesigned for GitHub
+
+- **Decision (Steven):** replace the one busy campaign chart with three single-message charts (`progress`, `tradeoffs`, `qc`) in light and dark, with titles that state the result, drawn by `algae_sim/autolab/plot_campaign.py`.
+- A styling pass: layout measured in inches, a quieter QC grid, and colour-blind-checked colours. Fixed muddy, chopped text by turning off font hinting and rendering at 200 dpi (fc59f0f).
 
 ## 2026-11-11 — Chlorella light and pH from primary sources
 
