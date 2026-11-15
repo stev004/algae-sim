@@ -88,6 +88,24 @@ laptop: device service → capture log → uploader ──HTTPS──▶ Azure F
   - Application Insights off or heavily sampled, since its cost wasn't checked.
 - **Expected cost:** £0 during the free month. On pay-as-you-go afterwards, pennies a month for blob storage, with Functions inside the free grant.
 
+### Change: no Function for now (2026-11-15)
+
+Creating the Function App failed: the portal says *"Free trial subscription is not supported for Flex Consumption"*. Microsoft's docs imply it is supported (they list a 15-core quota for free trials); the portal decides. Python on the legacy Consumption plan needs Linux, which is retired for new features, so it's no fallback.
+
+**Decision (Steven):** drop the Function and keep £0 with the hard cap. The uploader on the laptop does the Function's job:
+- it writes each raw batch to the `raw` container;
+- it parses with the same `parse.py`;
+- it ingests clean rows into Data Explorer.
+
+The laptop signs in to both services as Steven, through a browser login with Entra ID, so no keys or connection strings are needed. The Function can be added later, after an upgrade to pay-as-you-go, without changing anything else.
+
+```text
+laptop: device service → capture log → uploader ──┬─▶ Blob: stalgaesim1107/raw  (batch as received)
+                                                  └─▶ parse.py ─▶ Data Explorer free cluster (dedupe view, dashboard)
+```
+
+Created so far (UK South, tag `project=algae-sim`): resource group `rg-algae-sim-pipeline`, storage account `stalgaesim1107`, private container `raw`.
+
 ### Decisions (Steven, 2026-11-14)
 
 - **Account:** a new Azure free account. Build inside its 30 days, where the spending limit is a hard cap; afterwards, tear down or keep only free-tier pieces.
