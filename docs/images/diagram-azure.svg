@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 372" width="750" height="372" font-family="-apple-system, 'Helvetica Neue', Arial, sans-serif" role="img" aria-label="Azure setup: one Entra ID sign-in; the laptop uploader sends raw batches to Blob Storage and clean rows to Data Explorer">
+<title>Azure setup: one Entra ID sign-in; the laptop uploader sends raw batches to Blob Storage and clean rows to Data Explorer</title>
+<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker><marker id="head-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#898781"/></marker></defs>
+<rect width="750" height="372" rx="14" fill="#fcfcfb"/>
+<rect x="30" y="30" width="270" height="84" rx="10" fill="#f0efec" stroke="#c3c2b7" stroke-width="1.2"/>
+<text x="46" y="59" font-size="15" font-weight="700" fill="#0b0b0b">Microsoft Entra ID</text>
+<text x="46" y="84" font-size="13" fill="#52514e">one sign-in, cached;</text>
+<text x="46" y="103" font-size="13" fill="#52514e">no keys anywhere</text>
+<rect x="30" y="176" width="270" height="132" rx="10" fill="#f0efec" stroke="#c3c2b7" stroke-width="1.2"/>
+<text x="46" y="205" font-size="15" font-weight="700" fill="#0b0b0b">Laptop</text>
+<text x="46" y="230" font-size="13" fill="#52514e">simulated device&#x27;s capture log</text>
+<text x="46" y="249" font-size="13" fill="#52514e">→ uploader, same parse rules</text>
+<text x="46" y="268" font-size="13" fill="#52514e">retries after outages</text>
+<rect x="420" y="30" width="300" height="112" rx="10" fill="#e6f0fb" stroke="#2a78d6" stroke-width="1.2"/>
+<text x="436" y="59" font-size="15" font-weight="700" fill="#0b0b0b">Blob Storage</text>
+<text x="436" y="84" font-size="13" fill="#52514e">every batch, byte for byte</text>
+<text x="436" y="103" font-size="13" fill="#52514e">role: write blobs only</text>
+<rect x="420" y="196" width="300" height="132" rx="10" fill="#e6f0fb" stroke="#2a78d6" stroke-width="1.2"/>
+<text x="436" y="225" font-size="15" font-weight="700" fill="#0b0b0b">Data Explorer</text>
+<text x="436" y="250" font-size="13" fill="#52514e">tables → dedupe views → report</text>
+<text x="436" y="269" font-size="13" fill="#52514e">role: ingest + read only</text>
+<text x="436" y="288" font-size="13" fill="#52514e">free cluster</text>
+<path d="M 165 116 L 165 170" fill="none" stroke="#898781" stroke-width="1.8" stroke-dasharray="5 5" marker-end="url(#head-muted)"/>
+<text x="175" y="149.0" font-size="12.5" fill="#52514e">signs in</text>
+<path d="M 300 214 L 360 214 L 360 86 L 414 86" fill="none" stroke="#2a78d6" stroke-width="1.8" marker-end="url(#head)"/>
+<text x="352" y="150" text-anchor="end" font-size="12.5" fill="#52514e">raw batches</text>
+<path d="M 300 262 L 414 262" fill="none" stroke="#2a78d6" stroke-width="1.8" marker-end="url(#head)"/>
+<text x="357" y="252" text-anchor="middle" font-size="12.5" fill="#52514e">clean rows</text>
+<text x="30" y="352" font-size="12.5" fill="#898781">£0: free account with a hard spending limit, plus the free Data Explorer cluster</text>
+</svg>

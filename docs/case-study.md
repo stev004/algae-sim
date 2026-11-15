@@ -6,28 +6,10 @@
 
 ## 1. The system
 
-```mermaid
-flowchart TB
-    subgraph AL["AutoLab (separate repo, pinned)"]
-        OPT["Optimiser<br/>Optuna TPE"] --> PROP["Proposal<br/>temperature, light, pH"]
-        PROP --> RUN["Culture runner<br/>validate, receipt, command"]
-        QC["QC per replicate<br/>2-of-3 rule"] --> OPT
-        EV[("Evidence ledger<br/>SQLite")]
-        QC --> EV
-    end
-
-    subgraph DEV["algae-sim device (own process, HTTP)"]
-        CORE["Firmware<br/>limits, idempotent commands,<br/>safe state"]
-        CTRL["On-board control<br/>thermostat, pH via CO2"]
-        SIM["Simulated culture<br/>hidden true state"]
-        SENS["Sensors<br/>noise, dropouts"]
-        CORE --> CTRL --> SIM --> SENS --> CTRL
-    end
-
-    RUN -- "setpoints per reactor" --> CORE
-    SENS -- "telemetry + OD750<br/>(measurements only)" --> QC
-    SENS -- "capture log" --> PIPE["Data pipeline<br/>local or Azure"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagram-loop-dark.svg">
+  <img alt="The closed loop: 1 AutoLab's optimiser proposes temperature, light and pH; 2 three reactors hold the conditions with their own control and safety; 3 QC checks every replicate, 2 of 3 must pass; 4 the optimiser learns. Measured data also flows to the data pipeline, locally or on Azure." src="images/diagram-loop.svg">
+</picture>
 
 **The rules that shape it:**
 - **Truth, measurement, decision and actuation are kept apart.** Only the simulator sees true temperature and biomass; everything else, including AutoLab, sees noisy sensor readings.
@@ -36,24 +18,7 @@ flowchart TB
 
 ## 2. One experiment
 
-```mermaid
-sequenceDiagram
-    participant O as AutoLab optimiser
-    participant R as AutoLab runner
-    participant D as Device (3 reactors)
-    participant Q as AutoLab QC
-    O->>R: propose 28 °C, 180 µmol/m²/s, pH 7.5
-    R->>R: check against policy and the device's declared limits
-    R->>D: setpoint command (one per replicate reactor)
-    D-->>R: acknowledgement with the values actually applied
-    loop every 15 min of simulated time, for 36 h
-        D->>D: sense → control heater and CO2 → grow
-        R->>D: poll telemetry and OD750
-    end
-    R->>Q: replicate readings
-    Q-->>O: pass (2 of 3 or better) → learn, fail → excluded
-```
-
+- **The steps:** the runner checks each proposal against its policy and the limits the device declares. It sends one setpoint command per replicate reactor, and the device acknowledges the values it actually applied. Then AutoLab polls telemetry and OD750 every 15 minutes of simulated time for the 36-hour hold.
 - **Time:** a 36-hour culture runs in a fraction of a second on simulated time, so a 20-experiment campaign takes seconds.
 - **Faults:** heater failures, culture crashes and stuck CO₂ valves can be injected into single replicates. AutoLab's QC catches each one; the [README](../README.md) lists them.
 - **Reproducibility:** every run is seeded, and rerunning a campaign gives byte-identical evidence and charts.
@@ -106,32 +71,10 @@ The failed first check was documented, not tuned away. The fix that followed, li
 
 Built in the Azure portal by me, at **£0**: the free account's hard spending limit, plus the free Data Explorer cluster.
 
-```mermaid
-flowchart TB
-    subgraph LAPTOP["Laptop"]
-        DEV2["Device service<br/>capture log"] --> UP["Uploader<br/>cursor, retry, backoff"]
-        UP --> PARSE["parse.py<br/>same rules as local"]
-    end
-
-    subgraph ENTRA["Microsoft Entra ID"]
-        ID["One browser sign-in<br/>cached in the keychain<br/>(no keys anywhere)"]
-    end
-
-    subgraph RG["rg-algae-sim-pipeline · UK South"]
-        BLOB[("Blob Storage<br/>stalgaesim1107 / raw<br/>each batch byte for byte")]
-    end
-
-    subgraph ADX["Data Explorer free cluster · Europe"]
-        Q["Queued ingestion<br/>30 s batching"] --> T[("Tables<br/>Environment, Od,<br/>Rejected, Batches")]
-        T --> MV[("Materialised views<br/>one row per device + sequence")]
-        MV --> FN["KQL functions<br/>HoldSummary(), PipelineHealth()"]
-    end
-
-    UP -- "raw batch" --> BLOB
-    PARSE -- "clean rows" --> Q
-    ID -. "Storage Blob Data Contributor" .-> BLOB
-    ID -. "Ingestor + Viewer only" .-> Q
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagram-azure-dark.svg">
+  <img alt="Azure setup: Microsoft Entra ID signs in the laptop, with no keys anywhere. The laptop uploader sends raw batches to Blob Storage (role: write blobs only) and clean rows to Data Explorer (role: ingest and read only), where tables feed dedupe views and the report. Cost £0." src="images/diagram-azure.svg">
+</picture>
 
 **Decisions, and what building it taught me:**
 - **No Azure Function.** The free trial refuses the Flex Consumption plan, even though the docs imply otherwise, and the older plan is retired for Python. So the laptop uploader does the Function's job, and the parse rules are shared code, not a copy.
