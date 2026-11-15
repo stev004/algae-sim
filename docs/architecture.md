@@ -18,7 +18,7 @@
    true state ─▶ TemperatureSensor ─▶ HysteresisController ─▶ Heater ──▶ true state
    (hidden)  └──▶ PhSensor ─────────▶ PhController ─────────▶ CO2 valve ┘
                    noise/dropouts       fail-safe, trips         may stick
-          └──▶ OpticalDensitySensor ─▶ capture log ─▶ data pipeline (local; Azure planned)
+          └──▶ OpticalDensitySensor ─▶ capture log ─▶ data pipeline (local, or Azure)
 ```
 
 ## Boundaries
@@ -39,11 +39,11 @@ The adapter owns the device:
 - Telemetry reports `applied`, `measured` (temperature and pH; `None` is a probe dropout) and `consumption` (cumulative since the command) dicts, plus trips and faults. Trip faults name the limit: `over_temperature_trip`, `ph_low_trip`, `ph_high_trip`. It never reports true state.
 - Safe state turns the heater and lights off and shuts off the CO₂; pH keeps reporting.
 
-**Replicates and faults.** AutoLab sends one setpoint command per replicate reactor (three by default). Each reactor counts its own holds, and its seed comes from the experiment ID plus the reactor ID, so replicates differ realistically but repeatably. `heater_faults`, `culture_crashes` and `co2_valve_faults` in `settings` map reactor → hold numbers, so a fault can hit exactly one replicate of one experiment.
+**Replicates and faults.** AutoLab sends one setpoint command per replicate reactor (three by default). Each reactor counts its own holds, and its seed comes from the device seed, the reactor ID and that reactor's hold number, so replicates differ realistically but repeatably, and identical campaigns are byte-for-byte reproducible. `heater_faults`, `culture_crashes` and `co2_valve_faults` in `settings` map reactor → hold numbers, so a fault can hit exactly one replicate of one experiment.
 
 **Resume.** Telemetry reports `active_command_id` (cleared at safe state). The simulated reactors live inside the AutoLab process, so if AutoLab restarts they're gone. A resume then finds no matching command and AutoLab safely ends the hold as `hold_interrupted`. That's the correct, conservative outcome; persisting the simulated device between processes would be needed to show a successful resume.
 
-**Clock coupling.** Before answering any call, the adapter steps the reactor forward to AutoLab's `clock.now()`. With `execution.clock: simulated`, AutoLab's `SteppedClock` jumps ahead, so a 36-hour hold costs a fraction of a second. The manifest declares `is_simulated: true`, which AutoLab requires before it will use a simulated clock. The batch seed comes from the experiment ID, so a resumed campaign recreates the same culture.
+**Clock coupling.** Before answering any call, the adapter steps the reactor forward to AutoLab's `clock.now()`. With `execution.clock: simulated`, AutoLab's `SteppedClock` jumps ahead, so a 36-hour hold costs a fraction of a second. The manifest declares `is_simulated: true`, which AutoLab requires before it will use a simulated clock. The batch seed comes from the reactor and its hold number, so a resumed campaign recreates the same culture.
 
 `campaign.py` is the earlier, database-free loop. It's kept as a quick demo of the optimiser alone.
 
@@ -87,4 +87,4 @@ Boundaries:
 - Each stage can be down independently. The log buffers while the uploader or ingest is down, and the cursor and dedupe keys make resends harmless.
 - Simulator truth is dropped at parse, so analysis sees only what a real device could report.
 
-Details and the Azure mapping are in [data-pipeline.md](data-pipeline.md).
+Details, and the Azure version (Blob Storage + Data Explorer), are in [data-pipeline.md](data-pipeline.md). The end-to-end story is in the [case study](case-study.md).

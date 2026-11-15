@@ -33,6 +33,8 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 > Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**: [checked against a real experiment](docs/validation.md), it gets the typical growth rate about right once self-shading is included, but prefers warmer temperatures than the measured strain. Nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
+**New here? Start with the [case study](docs/case-study.md)**: the architecture, the results and the Azure setup on one page, with diagrams.
+
 ## Benchmark: does the optimiser help?
 
 30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.9 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. The result held before and after the growth model gained self-shading. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
