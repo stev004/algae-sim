@@ -2,11 +2,29 @@
 
 [Project overview](../README.md) · [Working agreement](../AGENTS.md) · [Architecture](architecture.md) · [Model](model.md) · [Data pipeline](data-pipeline.md)
 
-## Current handoff — 2026-11-11
+## Current handoff — 2026-11-15
 
-algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)), and the growth model, now with self-shading, has been checked against a real experiment: the typical growth rate is about right, but the temperature curve doesn't fit that strain ([validation.md](validation.md)). 131 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
+algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26bfc8b`. The device declares named controlled variables (temperature, light intensity, pH), protection limits and metered resources (energy, CO2). pH is a setpoint the device holds by dosing CO2. Growth uses published *Chlorella vulgaris* values, each cited in [model.md](model.md); the carbonate buffer is still illustrative. Campaigns are byte-for-byte reproducible. The optimiser benchmark is done ([benchmark.md](benchmark.md)), and the growth model, now with self-shading, has been checked against a real experiment: the typical growth rate is about right, but the temperature curve doesn't fit that strain ([validation.md](validation.md)). 140 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run, and the pipeline's flags match AutoLab's QC replicate for replicate.
 
-Next: the Azure version of the pipeline, with Steven driving (account, region, Data Explorer vs SQL, cost guard and teardown; see [data-pipeline.md](data-pipeline.md)), then a dashboard and write-up.
+The data pipeline also runs on Azure, at £0: raw batches go to Blob Storage, clean rows to the free Data Explorer cluster, and the cloud report matches the local one ([data-pipeline.md](data-pipeline.md)). Resources: resource group `rg-algae-sim-pipeline` (UK South) with storage account `stalgaesim1107`, plus the free Data Explorer cluster (database `algae`). The free account's 30 days end around 2026-12-14; decide then whether to let it lapse or upgrade.
+
+Next (Steven's choice): a Data Explorer dashboard and a one-page case study; then real hardware, or applications.
+
+## 2026-11-15 — Azure pipeline
+
+- **Decisions (Steven):**
+  - a new free account, for its hard spending cap;
+  - the free Data Explorer cluster as the store;
+  - UK South;
+  - a £0 ceiling.
+
+  He set up the resources himself in the portal.
+- **Finding:** the free trial refuses Flex Consumption Functions, contrary to the docs. **Decision:** no Function; the laptop uploader writes to Blob and Data Explorer directly, signed in with Entra ID, so no keys exist.
+- **Finding:** the free cluster refuses streaming ingestion (403) from an Entra ID user, even with the Ingestor role. **Decision:** queued ingestion, with a 30 s batching window.
+- **Finding:** the Azure sign-in is a different principal from the Microsoft account that created the cluster. Steven granted it Ingestor and Viewer, least privilege. Permission errors now stop the uploader rather than retrying forever.
+- **Result:**
+  - the full demo capture went up in about 32 s, and a full replay was absorbed by the dedupe views (10,032 unique messages kept);
+  - `HoldSummary()` matches the local report on all 45 holds.
 
 ## 2026-11-14 — Self-shading
 

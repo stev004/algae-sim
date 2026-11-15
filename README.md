@@ -116,6 +116,7 @@ The injected faults in the demo config:
 | `algae_sim/records.py` | `run.json` and `telemetry.jsonl`, the instrument-capture format |
 | `algae_sim/device/` | Device firmware (`core.py`: reactor bank, limits, idempotent commands, device clock) and the HTTP device service (`service.py`) |
 | `algae_sim/pipeline/` | Data pipeline: parse/validate, raw + clean stores, ingest endpoint, uploader, per-hold analysis |
+| `algae_sim/azure/` | Azure version (optional extra): raw batches to Blob Storage, clean rows to Data Explorer, dedupe views and KQL report |
 | `algae_sim/autolab/` | AutoLab adapters: in-process (`controller.py`), over the network (`remote.py`), OD probe (`sensor.py`); campaign charts (`plot_campaign.py`); the optimiser benchmark (`benchmark.py`); an earlier database-free optimiser loop (`campaign.py`) |
 | `configs/` | Culture campaign and installation policy |
 | `docs/` | [Architecture](docs/architecture.md), [model](docs/model.md), [optimiser benchmark](docs/benchmark.md), [validation against real data](docs/validation.md), [data pipeline plan](docs/data-pipeline.md), [progress and decisions](docs/progress.md) |
@@ -126,6 +127,6 @@ The injected faults in the demo config:
 2. ✅ AutoLab read-only sensor adapter and optimiser loop.
 3. ✅ AutoLab stage-6 culture controller: replicates, telemetry, QC, contamination screens, evidence ledger. Migrated to culture contract v2 (named variables, pH held by CO2 dosing, CO2 metered).
 4. ✅ The reactor as its own device process: an HTTP device service with persisted state; AutoLab survives a crash mid-culture and resumes the hold.
-5. 🔶 Data pipeline: capture → move → parse → store → analyse. ✅ Local version; Azure version next ([plan](docs/data-pipeline.md)).
+5. ✅ Data pipeline: capture → move → parse → store → analyse, locally and on Azure (Blob Storage + Data Explorer, £0 on the free tier); the cloud report matches the local one for all 45 holds ([details](docs/data-pipeline.md)).
 
 The code was written by AI coding agents under my direction; I designed the system, set the requirements, and reviewed and tested every change. Working agreement for contributors and AI assistants: [AGENTS.md](AGENTS.md).
