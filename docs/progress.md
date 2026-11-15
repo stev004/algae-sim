@@ -22,6 +22,7 @@
 - **Azure free account lapses around 2026-12-14.** Steven moves next. Default: let it lapse; the subscription is disabled and nothing is charged. The storage account and blobs then go, which is fine, since they're regenerable from `runs/pipeline-demo`. The Data Explorer free cluster is separate and lasts a year, unless Microsoft withdraws the free tier. Optional tidy-up: delete `rg-algae-sim-pipeline` in the portal. If he upgrades instead, add a £5 budget alert first.
 - **Open-source lab-automation contribution.** Steven is taking this to his separate Bio-OSS session, not this repo. Leading candidate: PyLabRobot. Starter issues: #1255–1260 (docs), #1243 (good first issue). Stronger second contribution: #1376, per-protocol time and consumption tracking. Nothing to do here.
 - **Applications for lab-automation roles.** Steven moves next, with the `apply` skill, using the case study as the centrepiece.
+- **Later AutoLab stage 8 slices** are tracked in AutoLab's `STATE.md`, not here: seeded slot-to-group randomisation, and scheduling across campaigns. If one lands, algae-sim's side is to move the pin, rerun `benchmark run ... --arms optimiser random grid` (expect byte-identical observations), then rerun `--arms batch`.
 - **Optional model work, only on Steven's agreement:** a strain-specific temperature curve and a nitrogen limit, each checked against a dataset it wasn't fitted to. Also optional: a small real-hardware loop behind the same device contract.
 
 ## 2026-11-15 — Parallel reactor batches (AutoLab stage 8)
