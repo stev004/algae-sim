@@ -63,7 +63,7 @@ class TestSchema:
             assert f"ingestion json mapping '{mapping_name(table)}'" in kql
         assert "EnvironmentClean on table Environment" in kql
         assert "summarize arg_max(ingested_at, *) by device_id, sequence" in kql
-        assert "policy streamingingestion enable" in kql
+        assert "policy ingestionbatching" in kql and "00:00:30" in kql
 
 
 class FakeContainer:
@@ -128,3 +128,23 @@ def test_uploader_sends_through_the_sink_and_advances_its_cursor(tmp_path, sink_
     sent = uploader.drain()
     assert sum(s.stored for s in sent) == len(log.read_text().splitlines())
     assert uploader.pending_lines() == 0 and len(container.blobs) == len(sent)
+
+
+def test_permission_errors_stop_instead_of_retrying(sink_parts):
+    from algae_sim.azure.sink import is_permanent
+    from algae_sim.pipeline.uploader import IngestRefused
+
+    class Forbidden(Exception):
+        status_code = 403
+
+    sink, _, _ = sink_parts
+
+    class Refusing(FakeContainer):
+        def upload_blob(self, name, data, overwrite):
+            raise Forbidden("AuthorizationPermissionMismatch")
+
+    sink.container = Refusing()
+    with pytest.raises(IngestRefused):
+        sink.send(batch(captured_lines(hours=0.5)))
+    assert is_permanent(Exception('Forbidden (403-Forbidden): ... "@permanent": true'))
+    assert not is_permanent(ConnectionError("reset by peer"))

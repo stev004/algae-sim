@@ -174,7 +174,7 @@ def pipeline_main(args: argparse.Namespace) -> None:
         return
     if args.pipeline_command == "upload":
         from algae_sim.device.service import CAPTURE_FILE
-        from algae_sim.pipeline.uploader import Uploader
+        from algae_sim.pipeline.uploader import IngestRefused, Uploader
 
         sender = None
         if args.azure:
@@ -192,6 +192,8 @@ def pipeline_main(args: argparse.Namespace) -> None:
             )
         except KeyboardInterrupt:
             print("uploader stopped; cursor saved", flush=True)
+        except IngestRefused as exc:
+            raise SystemExit(f"upload refused, not retrying (cursor unchanged): {exc}") from None
         return
 
     import signal
