@@ -105,3 +105,29 @@ def test_headline_states_the_result_from_the_numbers():
     )
     # An interval that crosses zero is not claimed as a win.
     assert "no better trade-offs" in headline(summary((-0.01, 0.02), (-0.1, 0.1)))
+
+
+def test_batch_arm_uses_a_bigger_bank_and_the_same_budget():
+    from algae_sim.autolab.benchmark import BATCH_REACTORS, BATCH_SIZE
+
+    config = run_config("batch", 0)
+    assert config["optimization"]["batch_size"] == BATCH_SIZE
+    assert config["culture_design"]["reactor_ids"] == BATCH_REACTORS
+    assert config["execution"]["controller"]["settings"]["reactor_ids"] == BATCH_REACTORS
+    assert len(BATCH_REACTORS) == 3 * BATCH_SIZE  # groups of 3 replicates
+    assert config["campaign"]["max_experiments"] == BUDGET
+    assert config["campaign"]["seed"] == run_config("optimiser", 0)["campaign"]["seed"]
+
+
+def test_batching_summary_counts_rounds_not_experiments():
+    from algae_sim.autolab.benchmark import batching_summary, rounds_for
+
+    assert [rounds_for(i, 3) for i in range(6)] == [1, 1, 1, 2, 2, 2]
+    # Toy tracks: hypervolume rises by 1 per experiment in both arms.
+    seq = {r: ([float(i + 1) for i in range(18)], [0.0] * 18) for r in range(4)}
+    bat = {r: ([float(i + 1) for i in range(18)], [0.0] * 18) for r in range(4)}
+    b = batching_summary(seq, bat, 3)
+    assert b["rounds"] == {"sequential": 18, "batch": 6}
+    assert b["equal_experiments"]["median_difference"] == 0  # same efficiency per experiment
+    assert b["equal_rounds"]["median_difference"] == 18 - 6  # 3x the experiments in 6 rounds
+    assert b["sequential_median_hypervolume"] == 18

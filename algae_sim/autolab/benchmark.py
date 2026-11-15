@@ -51,7 +51,12 @@ GRID_LEVELS = {
     "light_intensity": [60.0, 180.0, 400.0],
     "ph": [6.5, 8.0],
 }
-ARMS = ("optimiser", "random", "grid")
+ARMS = ("optimiser", "random", "grid", "batch")
+# Batch arm (AutoLab stage 8): the optimiser asks for BATCH_SIZE conditions per round and
+# runs them at once on separate reactor groups, so it needs a bigger bank.
+STRATEGY_ARMS = ("optimiser", "random", "grid")  # same 3-reactor bank, compared directly
+BATCH_SIZE = 3
+BATCH_REACTORS = [f"reactor-{i}" for i in range(1, 3 * BATCH_SIZE + 1)]
 
 # Worst case per objective, from device limits only (docs/model.md):
 # * OD750: 0, nothing grew. Best possible is the sensor's 4.0 ceiling.
@@ -96,6 +101,13 @@ def run_config(arm: str, run: int, startup: int = STARTUP) -> dict[str, Any]:
         optimization.update(strategy="random", startup_experiments=0)
     elif arm == "grid":
         optimization.update(strategy="grid", startup_experiments=0, grid_levels=GRID_LEVELS)
+    elif arm == "batch":
+        # Same optimiser and start-up setting; AutoLab rounds start-up up to a whole
+        # round (9 random experiments at k = 3 instead of 8) and reports it.
+        optimization.update(strategy="bayesian", startup_experiments=startup,
+                            batch_size=BATCH_SIZE)
+        config["culture_design"]["reactor_ids"] = BATCH_REACTORS
+        settings["reactor_ids"] = BATCH_REACTORS
     else:
         raise ValueError(f"unknown arm {arm!r}")
     return config
@@ -350,13 +362,54 @@ def summarise(observations: Sequence[Observation]) -> dict[str, Any]:
         "comparisons": [],
     }
     if "optimiser" in final:
-        for baseline in (a for a in ARMS if a in final and a != "optimiser"):
+        for baseline in (a for a in STRATEGY_ARMS if a in final and a != "optimiser"):
             runs = sorted(set(final["optimiser"]) & set(final[baseline]))
             for metric, table in (("hypervolume", final), ("best_od", best)):
                 c = compare([table["optimiser"][r] for r in runs],
                             [table[baseline][r] for r in runs], baseline)
                 summary["comparisons"].append({"metric": metric, **asdict(c)})
+    if "optimiser" in tracks and "batch" in tracks:
+        summary["batching"] = batching_summary(tracks["optimiser"], tracks["batch"])
     return summary
+
+
+def rounds_for(index: int, batch_size: int) -> int:
+    """Culture rounds (one 36 h hold each) needed to finish experiment ``index`` (0-based)."""
+    return index // batch_size + 1
+
+
+def batching_summary(
+    sequential: dict[int, tuple[list[float], list[float]]],
+    batched: dict[int, tuple[list[float], list[float]]],
+    batch_size: int = BATCH_SIZE,
+) -> dict[str, Any]:
+    """Batches of k against one at a time: what batching costs and what it saves.
+
+    * At equal experiments (the full budget), does batching lose search efficiency?
+    * At equal rounds of culture time, how far ahead is the batch arm?
+
+(A third measure, rounds to reach the sequential arm's *median* final value, was
+planned and dropped: about half of any arm's runs miss its own median by
+definition, so it can't give a fair round count.)
+    Paired by run (same campaign seed). The batch arm uses a larger reactor bank, so
+    its simulated noise differs; the pairing is by seed and conditions, not by world.
+    """
+    runs = sorted(set(sequential) & set(batched))
+    budget = min(len(sequential[runs[0]][0]), len(batched[runs[0]][0]))
+    batch_rounds = rounds_for(budget - 1, batch_size)
+    equal_experiments = compare([batched[r][0][budget - 1] for r in runs],
+                                [sequential[r][0][budget - 1] for r in runs], "sequential")
+    equal_rounds = compare([batched[r][0][batch_rounds * batch_size - 1] for r in runs],
+                           [sequential[r][0][batch_rounds - 1] for r in runs], "sequential")
+    target = statistics.median(sequential[r][0][budget - 1] for r in runs)
+    return {
+        "batch_size": batch_size,
+        "budget_experiments": budget,
+        "rounds": {"sequential": budget, "batch": batch_rounds},
+        "equal_experiments": asdict(equal_experiments),
+        "equal_rounds": {"rounds": batch_rounds, **asdict(equal_rounds)},
+        "sequential_median_hypervolume": target,
+    }
 
 
 # -- charts ---------------------------------------------------------------------------
@@ -364,11 +417,15 @@ def summarise(observations: Sequence[Observation]) -> dict[str, Any]:
 # Categorical slots 1-3 of the validated palette, light and dark. The light aqua is
 # under 3:1 against the surface, so every line is also labelled directly.
 ARM_COLOURS = {
-    "light": {"optimiser": "#2a78d6", "random": "#eb6834", "grid": "#1baf7a"},
-    "dark": {"optimiser": "#3987e5", "random": "#d95926", "grid": "#199e70"},
+    "light": {"optimiser": "#2a78d6", "random": "#eb6834", "grid": "#1baf7a",
+              "batch": "#eda100"},
+    "dark": {"optimiser": "#3987e5", "random": "#d95926", "grid": "#199e70",
+             "batch": "#c98500"},
 }
-ARM_LABELS = {"optimiser": "AutoLab optimiser", "random": "random search", "grid": "grid"}
-END_LABELS = {"optimiser": "optimiser", "random": "random", "grid": "grid"}  # line ends
+ARM_LABELS = {"optimiser": "AutoLab optimiser", "random": "random search", "grid": "grid",
+              "batch": "optimiser, batches of 3"}
+END_LABELS = {"optimiser": "optimiser", "random": "random", "grid": "grid",
+              "batch": "batch of 3"}  # line ends
 
 
 def _quantiles(values: Sequence[float]) -> tuple[float, float, float]:
@@ -414,7 +471,7 @@ def progress_figure(
 
     theme, colours = pc.THEMES[mode], ARM_COLOURS[mode]
     tracks = trajectories(observations)
-    arms = [a for a in ARMS if a in tracks]
+    arms = [a for a in STRATEGY_ARMS if a in tracks]
     fig, axes = plt.subplots(1, 2, figsize=(8, 4.7), squeeze=False)
     fig.subplots_adjust(left=0.08, right=0.89, wspace=0.38)
     n = len(next(iter(tracks[arms[0]].values()))[0])
@@ -470,7 +527,7 @@ def pairs_figure(summary: dict[str, Any], observations: Sequence[Observation], m
 
     theme, colours = pc.THEMES[mode], ARM_COLOURS[mode]
     tracks = trajectories(observations)
-    baselines = [a for a in ARMS if a in tracks and a != "optimiser"]
+    baselines = [a for a in STRATEGY_ARMS if a in tracks and a != "optimiser"]
     fig, axes = plt.subplots(1, 2, figsize=(8, 1.9 + 0.75 * len(baselines)), squeeze=False)
     fig.subplots_adjust(left=0.2, right=0.97, wspace=0.12)
     comparisons = {(c["metric"], c["baseline"]): c for c in summary["comparisons"]}
@@ -520,6 +577,59 @@ def pairs_figure(summary: dict[str, Any], observations: Sequence[Observation], m
     return fig
 
 
+def batch_figure(observations: Sequence[Observation], summary: dict[str, Any], mode: str) -> Any:
+    """Progress against culture time (rounds of 36 h): one at a time against batches."""
+    import matplotlib.pyplot as plt
+
+    from algae_sim.autolab import plot_campaign as pc
+
+    theme, colours = pc.THEMES[mode], ARM_COLOURS[mode]
+    tracks = trajectories(observations)
+    b = summary["batching"]
+    k = b["batch_size"]
+    fig, ax = plt.subplots(figsize=(8, 4.6))
+    fig.subplots_adjust(left=0.09, right=0.86)
+    pc._frame(ax, theme)
+    cost = b["equal_experiments"]
+    rounds = b["rounds"]
+    if cost["ci_low"] <= 0 <= cost["ci_high"]:
+        title = (f"Batches of {k} reach the same trade-off in {rounds['batch']} rounds"
+                 f" instead of {rounds['sequential']}")
+    else:
+        direction = "better" if cost["median_difference"] > 0 else "worse"
+        title = (f"Batches of {k} finish in {rounds['batch']} rounds instead of"
+                 f" {rounds['sequential']}, with a {direction} trade-off")
+    below = pc._titles(
+        fig, title,
+        f"Median of {cost['pairs']} runs per arm, middle half shaded. One round = one 36 h"
+        f" culture. Batches of {k} use {3 * k} reactors\n(groups of 3); one at a time uses 3."
+        f" Same 18-experiment budget for both.", theme)
+    for arm, per_round in (("optimiser", 1), ("batch", k)):
+        series = [hv for hv, _ in tracks[arm].values()]
+        n = len(series[0])
+        # The value at the end of each round: experiments per_round, 2*per_round, ...
+        idx = list(range(per_round - 1, n, per_round))
+        xs = [i // per_round + 1 for i in idx]
+        low, mid, high = zip(*(_quantiles([s[i] for s in series]) for i in idx), strict=True)
+        ax.fill_between(xs, low, high, color=colours[arm], alpha=0.14, lw=0)
+        label = ("one at a time (3 reactors)" if arm == "optimiser"
+                 else f"batches of {k} ({3 * k} reactors)")
+        ax.plot(xs, mid, color=colours[arm], lw=2, marker="o", ms=4, label=label)
+    ax.axhline(b["sequential_median_hypervolume"], color=theme["muted"], lw=0.8,
+               ls=(0, (3, 3)))
+    ax.annotate("one at a time, final median", (1, b["sequential_median_hypervolume"]),
+                xycoords=("axes fraction", "data"), xytext=(-4, 5), textcoords="offset points",
+                ha="right", fontsize=8, color=theme["muted"])
+    ax.set_ylim(bottom=0)
+    ax.set_xlim(1, b["rounds"]["sequential"])
+    ax.set_xlabel("rounds of culture (36 h each)", labelpad=8)
+    ax.set_ylabel("trade-off covered (hypervolume)", labelpad=8)
+    handles, labels = ax.get_legend_handles_labels()
+    end = pc._legend(fig, handles, labels, below + 0.14)
+    pc._plot_top(fig, end + 0.22, 0.6)
+    return fig
+
+
 def plot(
     observations: Sequence[Observation],
     summary: dict[str, Any],
@@ -541,6 +651,8 @@ def plot(
         for name, fig in (
             ("benchmark-progress", progress_figure(observations, summary, mode, startup)),
             ("benchmark-pairs", pairs_figure(summary, observations, mode)),
+            *((("benchmark-batch", batch_figure(observations, summary, mode)),)
+              if "batching" in summary else ()),
         ):
             path = output_dir / f"{name}{suffix}.png"
             fig.savefig(path, dpi=pc.DPI)

@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Model](model.md) · [Architecture](architecture.md) · [Progress](progress.md)
 
-**Short answer:** on the simulated *Chlorella* reactor, AutoLab's optimiser finds better trade-offs between growth, energy and CO₂ than random search, by 2.9 % (median). That's small but consistent: it was better in 22 of 30 paired runs. It does not find denser cultures than random search. It beats a fixed grid clearly on both counts. The same conclusion held before and after the growth model gained self-shading, which is a useful robustness check. This is a result about a simulator, and the limits section says why it may not hold on real hardware.
+**Short answer:** on the simulated *Chlorella* reactor, AutoLab's optimiser finds better trade-offs between growth, energy and CO₂ than random search, by 2.9 % (median). That's small but consistent: it was better in 22 of 30 paired runs. It does not find denser cultures than random search. It beats a fixed grid clearly on both counts. The same conclusion held before and after the growth model gained self-shading, which is a useful robustness check. Running the optimiser in **parallel batches of 3** (AutoLab stage 8) reaches the same result in **6 rounds of culture instead of 18**, with no detectable loss of search efficiency. This is a result about a simulator, and the limits section says why it may not hold on real hardware.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-progress-dark.png">
@@ -65,6 +65,35 @@ The edge over random search grows from 2.9 % to 3.6 % (26 of 30 runs). Comparing
 
 Reproduce with `--startup 4` on both `run` (optimiser arm only) and `analyse`.
 
+## Parallel batches (AutoLab stage 8)
+
+AutoLab can now run several conditions at once: the optimiser asks for k proposals per round, and each runs on its own group of reactors. A fourth arm runs the same optimiser in **batches of 3 on a 9-reactor bank** (three groups of three replicates) and is compared with the one-at-a-time optimiser above.
+- **Same for both:** an 18-experiment budget, campaign seeds and start-up setting.
+- **Rounds:** batching needs 6 rounds of culture (36 h each) instead of 18.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-batch-dark.png">
+  <img alt="Hypervolume against rounds of culture: batches of 3 reach the one-at-a-time final median in 6 rounds; one at a time takes 18" src="images/benchmark-batch.png">
+</picture>
+
+| Batches of 3 vs one at a time | Batch better in | Median difference (95 % CI) | p |
+|---|---|---|---|
+| At equal experiments (18 each): does batching cost search efficiency? | 15 / 30 | −0.00003 (−0.0025 to +0.0014) | 0.45 |
+| At equal culture time (6 rounds each): how far ahead is batching? | 30 / 30 | +0.042 (+0.034 to +0.047) | < 0.001 |
+
+**Results:**
+- **No detectable efficiency cost.** At the same 18 experiments the two arms are indistinguishable, so a third of the culture time gives the same trade-off.
+- **The cost is hardware:** three times the reactors at once.
+- **Why proposals don't pile up:** AutoLab's TPE uses Optuna's "constant liar", which treats a round's pending experiments as provisional bad results, so the three proposals spread out rather than clustering.
+
+**Caveats specific to this comparison:**
+- **The pairing is by seed and conditions, not by simulated world.** The batch arm uses 9 reactors, so its sensor noise streams differ from the 3-reactor arm's.
+- **Start-up rounds up to a whole round:** 9 random experiments instead of 8, because AutoLab only switches from random to model-guided proposals between rounds. The first 8 proposals are identical to the one-at-a-time arm's.
+- **Reactors are identical apart from noise.** Real reactor banks have position effects such as light gradients or edge heating, and fixed slot-to-group placement would confound them.
+- **One planned measure was dropped.** I had planned to count rounds to reach the one-at-a-time *median*. About half of any arm's runs miss a median by definition, so it couldn't give a fair count. The equal-experiments comparison answers the same question.
+
+Regression check: on the stage 8 AutoLab (`796aed3`), the original three arms reproduce **byte-identical** observations, so `batch_size: 1` is unchanged.
+
 ## What it means
 
 - **The optimiser learns something, but late, and only about the trade-off.**
@@ -98,4 +127,4 @@ uv run python -m algae_sim.autolab.benchmark run runs/benchmark --runs 30 --work
 uv run python -m algae_sim.autolab.benchmark analyse runs/benchmark
 ```
 
-The observations behind these numbers are in [benchmark/observations.jsonl](benchmark/observations.jsonl): every experiment's conditions and the replicate means the optimiser saw. The summary is in [benchmark/summary.json](benchmark/summary.json). Campaigns are deterministic, so the same code and pins give the same files. Code: `algae_sim/autolab/benchmark.py`. AutoLab is pinned at `26bfc8b`.
+The observations behind these numbers are in [benchmark/observations.jsonl](benchmark/observations.jsonl): every experiment's conditions and the replicate means the optimiser saw. The summary is in [benchmark/summary.json](benchmark/summary.json). Campaigns are deterministic, so the same code and pins give the same files. Code: `algae_sim/autolab/benchmark.py`. AutoLab is pinned at `796aed3` (stage 8). Run only the batch arm with `--arms batch`.

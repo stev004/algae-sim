@@ -37,7 +37,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 ## Benchmark: does the optimiser help?
 
-30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.9 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. The result held before and after the growth model gained self-shading. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
+30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.9 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. The result held before and after the growth model gained self-shading. With AutoLab's parallel batches (3 conditions at once on 9 reactors), the optimiser reaches the same result in **6 rounds of culture instead of 18**. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
 
 ## Quick start
 

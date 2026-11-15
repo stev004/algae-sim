@@ -5,12 +5,12 @@
 ## Current handoff — 2026-11-15
 
 **State.** algae-sim is complete as a portfolio piece. The [case study](case-study.md) is the entry point.
-- It speaks AutoLab culture contract v2, pinned to AutoLab `26bfc8b`.
+- It speaks AutoLab culture contract v2, pinned to AutoLab `796aed3` (stage 8: parallel reactor batches).
 - Growth uses cited *C. vulgaris* values, with self-shading ([model.md](model.md)).
 - Against a real experiment, 9 of 12 runs pass at a 5 cm light path, but the temperature ranking is backwards ([validation.md](validation.md)).
-- Benchmark: +2.9 % trade-off over random search, 22 of 30 runs, p < 0.001 ([benchmark.md](benchmark.md)).
+- Benchmark: +2.9 % trade-off over random search, 22 of 30 runs, p < 0.001. With parallel batches of 3 on 9 reactors, the same result comes in 6 culture rounds instead of 18, at no detectable efficiency cost (p = 0.45) ([benchmark.md](benchmark.md)).
 - The data pipeline runs locally and on Azure at £0 ([data-pipeline.md](data-pipeline.md)).
-- 140 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run.
+- 142 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run.
 
 **Azure resources, all Steven's:**
 - resource group `rg-algae-sim-pipeline` (UK South) on a free-trial subscription, holding storage account `stalgaesim1107` and its private container `raw`;
@@ -23,6 +23,21 @@
 - **Open-source lab-automation contribution.** Steven is taking this to his separate Bio-OSS session, not this repo. Leading candidate: PyLabRobot. Starter issues: #1255–1260 (docs), #1243 (good first issue). Stronger second contribution: #1376, per-protocol time and consumption tracking. Nothing to do here.
 - **Applications for lab-automation roles.** Steven moves next, with the `apply` skill, using the case study as the centrepiece.
 - **Optional model work, only on Steven's agreement:** a strain-specific temperature curve and a nitrogen limit, each checked against a dataset it wasn't fitted to. Also optional: a small real-hardware loop behind the same device contract.
+
+## 2026-11-15 — Parallel reactor batches (AutoLab stage 8)
+
+- **Decision (Steven):** do Stage 8's first slice. He delegated the design review to the algae-sim session.
+- **Design:** AutoLab ADR 0005 was reviewed and approved with two requests:
+  - verify Optuna's `constant_liar` with 3 objectives and `constraints_func` (done, and tested);
+  - report round, slot and the effective random start-up per experiment (done: `culture report` → `batching`).
+- **Merge:** Steven approved the merge and push in the AutoLab session. Code `16636dc`, main `796aed3`; AutoLab CI passed. algae-sim now pins `796aed3`.
+- **Regression:** the original 90 benchmark campaigns reproduce byte-identical on the new pin, so `batch_size: 1` is unchanged.
+- **Batch arm:** `run_config("batch", …)` uses `batch_size: 3`, 9 reactors (in both `culture_design` and the controller settings), the same seeds, budget and start-up.
+- **Result** (30 runs, 540 of 540 experiments passed QC):
+  - at equal experiments, no detectable difference from one at a time (15 of 30, p = 0.45);
+  - at equal culture time (6 rounds), batching is ahead in 30 of 30 (+0.042 hypervolume);
+  - new chart: `docs/images/benchmark-batch*.png`. The strategy charts are byte-identical to before.
+- **Finding:** the planned "rounds to reach the median" measure was ill-posed, because about half the runs miss a median by definition. It was dropped and documented; equal-experiments answers the question.
 
 ## 2026-11-15 — Case study and diagrams
 

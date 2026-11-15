@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Architecture](architecture.md) · [Model](model.md) · [Benchmark](benchmark.md) · [Validation](validation.md) · [Data pipeline](data-pipeline.md)
 
-**In one paragraph:** I built a simulated algae photobioreactor that behaves like lab hardware, and drove it with [AutoLab](https://github.com/stev004/autolab), my closed-loop experimentation platform. AutoLab proposes growth conditions; the "device" holds them with its own control and safety; quality control rejects bad replicates; and the optimiser learns from the rest. The instrument data flows through a pipeline that runs both locally and on Azure. I grounded the growth model in published *Chlorella vulgaris* papers, then tested it against an independent experiment: it got the typical growth rate right but the temperature preference wrong, and I documented why rather than tuning it to pass. A benchmark of 90 campaigns shows the optimiser finds about 3 % better growth/energy/CO₂ trade-offs than random search. That's a small edge, honestly reported. The code was written by AI coding agents under my direction; I designed the system, set the requirements, and reviewed and tested every change.
+**In one paragraph:** I built a simulated algae photobioreactor that behaves like lab hardware, and drove it with [AutoLab](https://github.com/stev004/autolab), my closed-loop experimentation platform. AutoLab proposes growth conditions; the "device" holds them with its own control and safety; quality control rejects bad replicates; and the optimiser learns from the rest. The instrument data flows through a pipeline that runs both locally and on Azure. I grounded the growth model in published *Chlorella vulgaris* papers, then tested it against an independent experiment: it got the typical growth rate right but the temperature preference wrong, and I documented why rather than tuning it to pass. A benchmark of 90 campaigns shows the optimiser finds about 3 % better growth/energy/CO₂ trade-offs than random search. That's a small edge, honestly reported. Running it in parallel batches of 3 gets the same result in a third of the culture time. The code was written by AI coding agents under my direction; I designed the system, set the requirements, and reviewed and tested every change.
 
 ## 1. The system
 
@@ -44,6 +44,18 @@
 - **Robustness:**
   - The result held when the growth model changed underneath it (before shading: +2.5 %).
   - With fewer random start-up experiments the edge grew to +3.6 %. That setting wasn't chosen in advance, so it isn't the headline.
+
+### Does running experiments in parallel cost anything?
+
+AutoLab's stage 8 runs several conditions at once, each on its own group of reactors. On a 9-reactor bank, batches of 3 against one at a time:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-batch-dark.png">
+  <img alt="Batches of 3 reach the one-at-a-time result in 6 rounds of culture instead of 18" src="images/benchmark-batch.png">
+</picture>
+
+- **Same result, a third of the time.** With the same 18-experiment budget, batching ends at the same trade-off: no detectable difference, p = 0.45. It gets there in 6 rounds of 36-hour culture instead of 18. The price is three times the reactors.
+- **The original results didn't move.** On the stage 8 AutoLab, the original 90 campaigns reproduced byte for byte, so the one-at-a-time behaviour is unchanged.
 
 ### Is the growth model realistic?
 

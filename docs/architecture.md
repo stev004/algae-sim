@@ -39,6 +39,8 @@ The adapter owns the device:
 - Telemetry reports `applied`, `measured` (temperature and pH; `None` is a probe dropout) and `consumption` (cumulative since the command) dicts, plus trips and faults. Trip faults name the limit: `over_temperature_trip`, `ph_low_trip`, `ph_high_trip`. It never reports true state.
 - Safe state turns the heater and lights off and shuts off the CO₂; pH keeps reporting.
 
+**Parallel batches (AutoLab stage 8).** With `optimization.batch_size: k`, AutoLab splits `reactor_ids` into k consecutive groups and runs k conditions at once, one per group, under a shared barrier clock. The adapters need no change, because AutoLab serialises calls to the controller and the sensor. The benchmark's batch arm uses 9 reactors (`reactor_ids` set in both `culture_design` and the controller settings).
+
 **Replicates and faults.** AutoLab sends one setpoint command per replicate reactor (three by default). Each reactor counts its own holds, and its seed comes from the device seed, the reactor ID and that reactor's hold number, so replicates differ realistically but repeatably, and identical campaigns are byte-for-byte reproducible. `heater_faults`, `culture_crashes` and `co2_valve_faults` in `settings` map reactor → hold numbers, so a fault can hit exactly one replicate of one experiment.
 
 **Resume.** Telemetry reports `active_command_id` (cleared at safe state). The simulated reactors live inside the AutoLab process, so if AutoLab restarts they're gone. A resume then finds no matching command and AutoLab safely ends the hold as `hold_interrupted`. That's the correct, conservative outcome; persisting the simulated device between processes would be needed to show a successful resume.
