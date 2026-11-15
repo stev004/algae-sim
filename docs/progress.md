@@ -8,7 +8,7 @@ algae-sim speaks AutoLab's **culture contract v2** and is pinned to AutoLab `26b
 
 The data pipeline also runs on Azure, at £0: raw batches go to Blob Storage, clean rows to the free Data Explorer cluster, and the cloud report matches the local one ([data-pipeline.md](data-pipeline.md)). Resources: resource group `rg-algae-sim-pipeline` (UK South) with storage account `stalgaesim1107`, plus the free Data Explorer cluster (database `algae`). The free account's 30 days end around 2026-12-14; decide then whether to let it lapse or upgrade.
 
-Next (Steven's choice): a Data Explorer dashboard and a one-page case study; then real hardware, or applications.
+The one-page [case study](case-study.md) (architecture, results, Azure setup, a chart queried in Data Explorer) is done. **The project is complete as a portfolio piece.** Steven's focus moves to lab-automation roles and an open-source lab-automation contribution (PyLabRobot is the leading candidate). Optional later: a small real-hardware loop behind the same device contract.
 
 ## 2026-11-15 — Azure pipeline
 
