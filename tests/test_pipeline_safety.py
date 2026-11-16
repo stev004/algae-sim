@@ -99,9 +99,11 @@ def test_a_reused_sequence_with_different_data_is_quarantined_not_dropped(tmp_pa
 # -- the uploader only moves its cursor on a real acknowledgement --------------------
 
 
-def make_log(tmp_path, n=5):
+def make_log(tmp_path, n=5, boot="first"):
+    """A log whose lines are unique to this file, as real capture lines are
+    (each carries a device ID, sequence and timestamp)."""
     log = tmp_path / CAPTURE_FILE
-    log.write_text("".join(json.dumps({"n": i}) + "\n" for i in range(n)))
+    log.write_text("".join(json.dumps({"boot": boot, "n": i}) + "\n" for i in range(n)))
     return log
 
 
@@ -143,5 +145,7 @@ def test_a_replaced_log_that_is_longer_is_also_detected(tmp_path):
     uploader = Uploader(log, "http://unused", sender=ok)
     uploader.drain()
     log.unlink()
-    make_log(tmp_path, n=8)  # a bigger file: the old offset would skip its start
+    # A bigger file: the old offset would skip its start. On Linux it often gets the
+    # deleted file's inode number, so only its different first line identifies it.
+    make_log(tmp_path, n=8, boot="second")
     assert uploader.pending_lines() == 8
