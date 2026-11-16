@@ -49,7 +49,7 @@ Message format, schema version 3: `kind` (`environment` | `od`), `device_id` (`<
 - The uploader started while the ingest was down, buffered about 8,000 lines (the exact number depends on timing) over several failed attempts, then drained them once the ingest came up.
 - A full replay stored 0 new rows and counted every message as a duplicate.
 - Three bad lines were quarantined: an old schema version, a torn write, and an impossible 412 °C reading.
-- The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 5 reactor-2 and hold 6 reactors 1 and 2 (heater faults, off setpoint), hold 9 reactor-3 (culture crash, OD drop) and hold 11 reactor-1 (CO2 valve stuck open: `protection_trip`, `ph_off_setpoint`). These are two independent views of the same events.
+- The pipeline's own analysis flagged exactly the replicates AutoLab's QC failed: hold 1 reactor-2 and hold 4 reactors 1 and 2 (heater faults, off setpoint; holds 5 and 6 before the 2026-11-16 seed-scheme change), hold 9 reactor-3 (culture crash, OD drop) and hold 11 reactor-1 (CO2 valve stuck open: `protection_trip`, `ph_off_setpoint`). These are two independent views of the same events.
 
 ## Azure version (built 2026-11-15)
 

@@ -18,7 +18,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
-  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.24" src="docs/images/progress.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.29" src="docs/images/progress.png">
 </picture>
 
 <picture>
@@ -37,7 +37,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 ## Benchmark: does the optimiser help?
 
-30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser scores **2.9 % higher than random search on the combined growth/energy/CO₂ score** (better in 22 of 30 pairs, p < 0.001), and beats the grid on both counts. The edge comes from cheap, thin cultures: at a useful density (OD ≥ 1.0) it finds nothing cheaper than random search, and no denser cultures. With AutoLab's parallel batches (3 conditions at once on 9 reactors), the optimiser reaches the same result in **6 rounds of culture instead of 18**. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
+30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser scores **2.4 % higher than random search on the combined growth/energy/CO₂ score** (better in 24 of 30 pairs, p = 0.001), and beats the grid on both counts. The edge comes from cheap, thin cultures: at a useful density (OD ≥ 1.0) it finds nothing cheaper than random search, and no denser cultures. With AutoLab's parallel batches (3 conditions at once on 9 reactors), the optimiser reaches the same result in **6 rounds of culture instead of 18**. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
 
 ## Quick start
 
@@ -100,8 +100,8 @@ The injected faults in the demo config:
 
 | Experiment | Fault | AutoLab's verdict |
 |---|---|---|
-| 5 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control`; 2 of 3 pass, so the experiment counts |
-| 6 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
+| 1 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control`; 2 of 3 pass, so the experiment counts |
+| 4 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
 | 9 | reactor-3's culture crashes at hour 12 | Contamination screen `growth_plausible` flags the OD drops; 2 of 3 pass |
 | 11 | reactor-1's CO2 valve sticks open at hour 4 | The device trips on low pH and latches the CO2 off; AutoLab stops that replicate (`no_protection_trip`, `control:ph`); 2 of 3 pass |
 

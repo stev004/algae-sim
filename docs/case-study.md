@@ -36,15 +36,16 @@
 
 | Optimiser vs | Better trade-offs (hypervolume) | Denser cultures (best OD750) |
 |---|---|---|
-| Random search | **+2.9 %**, better in 22 of 30 runs, p < 0.001 | no difference (p = 0.38) |
-| Grid | **+13.5 %**, better in 30 of 30, p < 0.001 | +2.7 %, p = 0.001 |
+| Random search | **+2.4 %**, better in 24 of 30 runs, p = 0.001 | no better; slightly worse if anything (−1.5 %, p = 0.12) |
+| Grid | **+12.7 %**, better in 30 of 30, p < 0.001 | +3.0 %, p < 0.001 |
 
-- **What the optimiser learns:** to fill the cheap, thin corner of the outcome space, which the hypervolume score rewards. Count only cultures above OD 0.8 and the edge over random search disappears. At OD ≥ 1.0 its cheapest culture is no cheaper than random search's (about 2.4 kWh and 5.4 g CO₂ for both). It doesn't find denser cultures either.
+- **What the optimiser learns:** to fill the cheap, thin corner of the outcome space, which the hypervolume score rewards. Count only cultures above OD 0.8 and the edge over random search is no longer significant. At OD ≥ 1.0 its cheapest culture is no cheaper than random search's (about 2.4 kWh and 5–5.5 g CO₂ for both), and at OD ≥ 1.2 it used more CO₂. It doesn't find denser cultures either.
 - **What I'd change:** give the objective a minimum useful density, so the score stops rewarding thin cultures.
 - **The size of the edge:** small, because on this smooth simulated surface random search is a strong baseline.
 - **Robustness:**
   - The result held when the growth model changed underneath it (before shading: +2.5 %).
-  - With fewer random start-up experiments the edge grew to +3.6 %. That setting wasn't chosen in advance, so it isn't the headline.
+  - It held when AutoLab's seed scheme changed (previously +2.9 %).
+  - With fewer random start-up experiments the edge grew to +3.3 %. That setting wasn't chosen in advance, so it isn't the headline.
 
 ### Does running experiments in parallel cost anything?
 
@@ -55,7 +56,7 @@ AutoLab's stage 8 runs several conditions at once, each on its own group of reac
   <img alt="Batches of 3 reach the one-at-a-time result in 6 rounds of culture instead of 18" src="images/benchmark-batch.png">
 </picture>
 
-- **Same result, a third of the time.** With the same 18-experiment budget, batching ends at the same trade-off: the 95 % interval sits within ±1.2 % of the one-at-a-time result, under half the optimiser's edge over random. It gets there in 6 rounds of 36-hour culture instead of 18. The price is three times the reactors.
+- **Same result, a third of the time.** With the same 18-experiment budget, batching ends at the same trade-off: the 95 % interval runs from 1.0 % worse to 1.6 % better than one at a time. It gets there in 6 rounds of 36-hour culture instead of 18. The price is three times the reactors.
 - **The original results didn't move.** On the stage 8 AutoLab, the original 90 campaigns reproduced byte for byte, so the one-at-a-time behaviour is unchanged.
 
 ### Is the growth model realistic?
@@ -88,10 +89,10 @@ Built in the Azure portal by me, at **£0**: the free account's hard spending li
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/diagram-azure-dark.svg">
-  <img alt="Azure setup: Microsoft Entra ID signs in the laptop, with no keys anywhere. The laptop uploader sends raw batches to Blob Storage (role: write blobs only) and clean rows to Data Explorer (role: ingest and read only), where tables feed dedupe views and the report. Cost £0." src="images/diagram-azure.svg">
+  <img alt="Azure setup: Microsoft Entra ID signs in the laptop, with no keys anywhere. The laptop uploader sends raw batches to Blob Storage (role: blob read and write) and clean rows to Data Explorer (role: ingest and read only), where tables feed dedupe views and the report. Cost £0." src="images/diagram-azure.svg">
 </picture>
 
-**The data, queried in the cloud.** `HoldSummary()` charted directly in Data Explorer: final OD750 for every reactor in every experiment of the demo campaign. The injected faults show up as the odd bar out:
+**The data, queried in the cloud.** `HoldSummary()` charted directly in Data Explorer: final OD750 for every reactor in every experiment of the demo campaign. This chart is from the campaign run on 2026-11-14. AutoLab's seed scheme has changed since then, so the heater faults now sit in experiments 1 and 4 instead of 5 and 6. The injected faults show up as the odd bar out:
 - experiment 5, reactor-2: heater failure;
 - experiment 9, reactor-3: culture crash;
 - experiment 11, reactor-1: low-pH trip after a stuck CO₂ valve.

@@ -44,7 +44,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "autonomous-lab", marker = "extra == 'autolab'", git = "https://github.com/stev004/autolab?rev=796aed39c8a8725d30f5f99e977366b1d6b203ea" },
+    { name = "autonomous-lab", marker = "extra == 'autolab'", git = "https://github.com/stev004/autolab?rev=176cebcac5ffe4be6c5fd0e4a50ef3ac87aa67c6" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.27.0" },
     { name = "azure-kusto-data", marker = "extra == 'azure'", specifier = ">=6.0.4" },
     { name = "azure-kusto-ingest", marker = "extra == 'azure'", specifier = ">=6.0.4" },
@@ -81,7 +81,7 @@ wheels = [
 [[package]]
 name = "autonomous-lab"
 version = "0.5.0"
-source = { git = "https://github.com/stev004/autolab?rev=796aed39c8a8725d30f5f99e977366b1d6b203ea#796aed39c8a8725d30f5f99e977366b1d6b203ea" }
+source = { git = "https://github.com/stev004/autolab?rev=176cebcac5ffe4be6c5fd0e4a50ef3ac87aa67c6#176cebcac5ffe4be6c5fd0e4a50ef3ac87aa67c6" }
 dependencies = [
     { name = "alembic" },
     { name = "numpy" },
