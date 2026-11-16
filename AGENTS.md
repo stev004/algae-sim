@@ -8,7 +8,7 @@ This is Steven's portfolio project. As of 2026-11-08 the working mode is **agent
 
 - End each slice with a short plain-English walkthrough: what was built, why, how to run it, what the evidence shows, and one or two "try this" experiments.
 - Keep code readable over clever. Docstrings should say *why*, not just *what*.
-- Run commands and verification on Steven's behalf (he may be on his phone) and show concise results.
+- Run commands and verification and show concise results, so Steven can review the evidence as well as the code.
 - Ask before changing direction, scope, or anything listed under guardrails. Larger milestones (see the README roadmap) start only when Steven agrees.
 
 ## Engineering rules

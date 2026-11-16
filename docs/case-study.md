@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Architecture](architecture.md) · [Model](model.md) · [Benchmark](benchmark.md) · [Validation](validation.md) · [Data pipeline](data-pipeline.md)
 
-**In one paragraph:** I built a simulated algae photobioreactor that behaves like lab hardware, and drove it with [AutoLab](https://github.com/stev004/autolab), my closed-loop experimentation platform. AutoLab proposes growth conditions; the "device" holds them with its own control and safety; quality control rejects bad replicates; and the optimiser learns from the rest. The instrument data flows through a pipeline that runs both locally and on Azure. I grounded the growth model in published *Chlorella vulgaris* papers, then tested it against an independent experiment: it got the typical growth rate right but the temperature preference wrong, and I documented why rather than tuning it to pass. A benchmark of 90 campaigns shows the optimiser finds about 3 % better growth/energy/CO₂ trade-offs than random search. That's a small edge, honestly reported. Running it in parallel batches of 3 gets the same result in a third of the culture time. The code was written by AI coding agents under my direction; I designed the system, set the requirements, and reviewed and tested every change.
+**In one paragraph:** I built a simulated algae photobioreactor that behaves like lab hardware, and drove it with [AutoLab](https://github.com/stev004/autolab), my closed-loop experimentation platform. The engineering is the point: the device owns its own control and safety, and it survives its client crashing mid-culture. QC catches injected faults, and no measurement is lost or double-counted on the way to the cloud. The science is simulated, and I say where it's weak: against a real experiment the growth model gets the typical rate right but the temperature preference wrong. The optimiser's edge over random search turned out to come from cheap, thin cultures. The code was written by AI coding agents under my direction. I designed the system, set the requirements and reviewed the changes. An external audit then found safety gaps that review had missed; section 6 lists them and how they were fixed.
 
 ## 1. The system
 
@@ -13,7 +13,7 @@
 
 **The rules that shape it:**
 - **Truth, measurement, decision and actuation are kept apart.** Only the simulator sees true temperature and biomass; everything else, including AutoLab, sees noisy sensor readings.
-- **The device owns safety.** It refuses out-of-range commands itself, trips on over-temperature or low pH, and keeps holding safely if AutoLab or the network disappears.
+- **The device owns safety.** It refuses out-of-range commands itself, trips on over-temperature or low pH, and keeps holding safely if AutoLab or the network disappears. Trips latch, an independent cutout backs up the thermostat's probe, and a watchdog ends any hold at 96 h.
 - **AutoLab has no simulator-specific code.** The device plugs in through AutoLab's own controller and sensor contracts, as real hardware would. AutoLab did evolve during the project, gaining culture contract v2 for pH and a grid option for the benchmark, but as general features.
 
 ## 2. One experiment
@@ -36,10 +36,11 @@
 
 | Optimiser vs | Better trade-offs (hypervolume) | Denser cultures (best OD750) |
 |---|---|---|
-| Random search | **+2.9 %**, better in 22 of 30 runs, p < 0.001 | no difference (p = 0.31) |
-| Grid | **+13.5 %**, better in 30 of 30, p < 0.001 | +2.7 %, p < 0.001 |
+| Random search | **+2.9 %**, better in 22 of 30 runs, p < 0.001 | no difference (p = 0.38) |
+| Grid | **+13.5 %**, better in 30 of 30, p < 0.001 | +2.7 %, p = 0.001 |
 
-- **What the optimiser learns:** cheaper conditions for the same growth, which is what it's asked to do. It doesn't find denser cultures than random search.
+- **What the optimiser learns:** to fill the cheap, thin corner of the outcome space, which the hypervolume score rewards. Count only cultures above OD 0.8 and the edge over random search disappears. At OD ≥ 1.0 its cheapest culture is no cheaper than random search's (about 2.4 kWh and 5.4 g CO₂ for both). It doesn't find denser cultures either.
+- **What I'd change:** give the objective a minimum useful density, so the score stops rewarding thin cultures.
 - **The size of the edge:** small, because on this smooth simulated surface random search is a strong baseline.
 - **Robustness:**
   - The result held when the growth model changed underneath it (before shading: +2.5 %).
@@ -54,21 +55,23 @@ AutoLab's stage 8 runs several conditions at once, each on its own group of reac
   <img alt="Batches of 3 reach the one-at-a-time result in 6 rounds of culture instead of 18" src="images/benchmark-batch.png">
 </picture>
 
-- **Same result, a third of the time.** With the same 18-experiment budget, batching ends at the same trade-off: no detectable difference, p = 0.45. It gets there in 6 rounds of 36-hour culture instead of 18. The price is three times the reactors.
+- **Same result, a third of the time.** With the same 18-experiment budget, batching ends at the same trade-off: the 95 % interval sits within ±1.2 % of the one-at-a-time result, under half the optimiser's edge over random. It gets there in 6 rounds of 36-hour culture instead of 18. The price is three times the reactors.
 - **The original results didn't move.** On the stage 8 AutoLab, the original 90 campaigns reproduced byte for byte, so the one-at-a-time behaviour is unchanged.
 
 ### Is the growth model realistic?
 
 - **Grounding:** parameters come from published *C. vulgaris* papers, read in full where possible, each cited with a confidence level ([model.md](model.md)).
-- **The check:** the model was tested against an independent experiment (Pinto et al. 2026, 12 batch runs), with the rules fixed before running ([validation.md](validation.md)).
+- **The check:** the model was tested against an independent experiment (Pinto et al. 2026, 12 batch runs, 9 distinct conditions) with pass rules written before the first run ([validation.md](validation.md)).
 
-| | First check | After adding light self-shading |
-|---|---|---|
-| Runs within ±30 % on early growth | 0 of 12 | **9 of 12** (at an assumed 5 cm light path) |
-| Typical growth rate, model ÷ measured | 2.1× | **1.05×** |
-| Temperature ranking | backwards | still backwards: this strain prefers cooler conditions than the pooled literature values |
+| | First check | After adding light self-shading | A constant growth rate, no biology |
+|---|---|---|---|
+| Runs within ±30 % on early growth | 0 of 12 | 9 of 12 (at an assumed 5 cm light path) | **11 of 12** |
+| Typical growth rate, model ÷ measured | 2.1× (4.7× at the start of growth) | 1.05× | n/a |
+| Temperature ranking | backwards | still backwards: this strain prefers cooler conditions than the pooled literature values | n/a |
 
-The failed first check was documented, not tuned away. The fix that followed, light shading, used a value from a *different* study, and what still doesn't fit is stated plainly.
+- **The pass rule turned out too weak to mean much.** A constant rate beats the model, so passing says little about the biology. The temperature ranking is the informative part, and it fails.
+- **The shading fix is a calibration, not an independent check.** Its light path (5 cm) is unreported in the paper and was chosen while fixing the failure, and the pass count swings from 0 to 10 of 12 across 2–13 cm. The rerun used the same dataset.
+- The failed first check was documented, not tuned away, and what still doesn't fit is stated plainly.
 
 ### Does the data pipeline hold up?
 
@@ -100,16 +103,36 @@ Experiment 6's heater faults lowered reactors 1 and 2 only slightly, but QC stil
 **Decisions, and what building it taught me:**
 - **No Azure Function.** The free trial refuses the Flex Consumption plan, even though the docs imply otherwise, and the older plan is retired for Python. So the laptop uploader does the Function's job, and the parse rules are shared code, not a copy.
 - **Queued, not streaming, ingestion.** The free cluster refused streaming writes (403) even with the right role. I diagnosed it by probing each write path with the same identity: reads, inline ingestion and queued ingestion worked, and streaming didn't.
-- **Two identities, least privilege.** The Azure sign-in is a different principal from the Microsoft account that created the cluster, so it got explicit *Ingestor* and *Viewer* rights, nothing more. Permission errors now stop the uploader with the identity named, instead of retrying quietly.
-- **Duplicates are expected, then removed.** Data Explorer accepts everything; materialised views keep the latest copy of each message, so resends and replays are harmless.
+- **Two identities, least privilege where Azure allows it.** The Azure sign-in is a different principal from the Microsoft account that created the cluster, so it got explicit *Ingestor* and *Viewer* rights, nothing more. On storage, the smallest built-in role that can write blobs (*Storage Blob Data Contributor*) can also delete them, so true write-only would need a custom role or immutable storage. Permission errors stop the uploader with the identity named, instead of retrying quietly.
+- **Duplicates are expected, then removed.** Data Explorer accepts everything; materialised views keep the first copy of each message, the same rule as the local store, so resends and replays are harmless.
+- **What it can't do yet:** sign-in is an interactive browser login, so it can't run unattended, and queued ingestion is never checked for completion; a missing batch would only show up in `PipelineHealth()`.
 
 ## 5. What I'd do next
 
 - **A real reactor.** A jar of *Chlorella*, a heater, an LED panel and cheap sensors on a Raspberry Pi, behind the same device contract, so AutoLab wouldn't change at all. That's the one step that would turn "simulated" into "real".
 - **A strain-specific temperature curve** and a nitrogen limit, each checked against a dataset it wasn't fitted to.
 
+## 6. What an external audit found, and what changed
+
+An audit written as if by a lab-automation lead (2026-11-16) found real gaps. Each fix below has a test that reproduces the original failure.
+
+| Found | Fixed |
+|---|---|
+| A second client could replace a running hold or restart a reactor someone else had made safe | Holds have an owner; anyone may make a reactor safe, but only its owner restarts it |
+| A reused command ID with a different reactor was answered "duplicate, accepted", and that reactor never started | The device fingerprints each request; a mismatched reuse is refused |
+| The "latching" over-temperature trip reset itself 2 °C below the trip; the low-pH shutoff reopened, so a stuck valve cycled through 6 trips | Trips latch; the over-temperature trip needs an operator release |
+| Protection relied on one probe: reading 4 °C low, the vessel reached 40 °C with no trip | An independent hardware cutout, modelled on a manual-reset thermostat, that doesn't use the probe; a heater that fails stuck on is now simulated too |
+| The declared 96 h maximum hold wasn't enforced, and one unbounded clock request could stall the device | A watchdog ends holds at 96 h; clock requests are bounded |
+| After the device lost its state, new data reused sequence numbers and was silently dropped as "duplicates" | Numbering continues past the capture log; a "duplicate" with different data is quarantined |
+| The uploader moved its cursor before reading the reply, and missed a replaced log | It acknowledges only a well-formed reply, and recognises a replaced log |
+| Local and Azure kept different copies of a duplicate | Both keep the first |
+| Validation and benchmark claims overstated (above) | Corrected on this page and in [validation.md](validation.md) and [benchmark.md](benchmark.md) |
+
+AutoLab's own findings, including a safe-state sweep that one faulty reactor could abort, are being fixed in the AutoLab repository.
+
 ## Limits, stated plainly
 
 - **Every result except the validation comes from a simulator.** Nothing here predicts real algae behaviour.
 - **The benchmark is narrow:** one strain, one budget and one search space. Real hardware adds drift and failures that could erase a 3 % edge.
+- **Every safety claim is tested only against simulated faults.** Real hardware fails in ways a simulator doesn't think of.
 - **The Azure setup is a demonstration at demo scale:** one user, a free cluster with no SLA, and no production hardening.

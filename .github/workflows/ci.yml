@@ -7,6 +7,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hung test or demo fails the build instead of stalling it
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -15,7 +16,7 @@ jobs:
       - name: Lint
         run: uv run ruff check .
       - name: Test (includes a full AutoLab culture campaign)
-        run: uv run pytest -q
+        run: uv run pytest -q --timeout 300
       - name: Demo campaign smoke run
         run: |
           uv run autolab init --database ci.sqlite3
@@ -23,3 +24,9 @@ jobs:
           uv run autolab culture run "$CID" --database ci.sqlite3 --policy configs/culture-policy.yaml --optimizer-root ci-optimizer --artifact-root ci-artifacts --quiet
       - name: Data pipeline demo
         run: ./scripts/pipeline_demo.sh
+      - name: Crash-and-resume demo (SIGKILL AutoLab mid-hold, restart, resume)
+        timeout-minutes: 10
+        run: ./scripts/resume_demo.sh
+      - name: Committed benchmark data still reproduces
+        timeout-minutes: 10
+        run: uv run python scripts/check_reproduction.py --runs 1

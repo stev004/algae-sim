@@ -10,7 +10,7 @@
 - Against a real experiment, 9 of 12 runs pass at a 5 cm light path, but the temperature ranking is backwards ([validation.md](validation.md)).
 - Benchmark: +2.9 % trade-off over random search, 22 of 30 runs, p < 0.001. With parallel batches of 3 on 9 reactors, the same result comes in 6 culture rounds instead of 18, at no detectable efficiency cost (p = 0.45) ([benchmark.md](benchmark.md)).
 - The data pipeline runs locally and on Azure at £0 ([data-pipeline.md](data-pipeline.md)).
-- 142 tests pass; `demo.sh`, `resume_demo.sh` and `pipeline_demo.sh` all run.
+- Tests and demos: see the 2026-11-16 entry below.
 
 **Azure resources, all Steven's:**
 - resource group `rg-algae-sim-pipeline` (UK South) on a free-trial subscription, holding storage account `stalgaesim1107` and its private container `raw`;
@@ -24,6 +24,34 @@
 - **Applications for lab-automation roles.** Steven moves next, with the `apply` skill, using the case study as the centrepiece.
 - **Later AutoLab stage 8 slices** are tracked in AutoLab's `STATE.md`, not here: seeded slot-to-group randomisation, and scheduling across campaigns. If one lands, algae-sim's side is to move the pin, rerun `benchmark run ... --arms optimiser random grid` (expect byte-identical observations), then rerun `--arms batch`.
 - **Optional model work, only on Steven's agreement:** a strain-specific temperature curve and a nitrogen limit, each checked against a dataset it wasn't fitted to. Also optional: a small real-hardware loop behind the same device contract.
+
+## 2026-11-16 — External audit: safety fixes and corrected claims
+
+An audit written as if by a lab-automation lead reproduced real gaps. The fixes are on branch `audit-fixes`; the case study's section 6 lists them.
+- **Device:**
+  - hold ownership;
+  - payload-checked idempotency;
+  - truly latching trips, with an operator release;
+  - an independent hardware cutout and a stuck-on heater fault;
+  - a 96 h watchdog and a bounded clock;
+  - fsynced state;
+  - 500 replies instead of dropped connections;
+  - non-loopback hosts refused without `--allow-remote`.
+- **Pipeline:**
+  - sequence numbers never reused after state loss or rollback;
+  - a mismatched "duplicate" quarantined as `sequence_conflict`;
+  - the uploader acknowledges only well-formed replies and detects a replaced log;
+  - fsync on raw batches;
+  - Azure views keep the first copy, like the local store. A live cluster needs `schema.kql` re-run.
+- **Claims corrected:**
+  - Validation: a constant growth rate passes 11 of 12. The 5 cm light path came in with the rerun. Vessels have a 3 L working volume, and I_k is inconsistent with μmax.
+  - Benchmark: the edge is in thin, cheap cultures, and nothing is cheaper at OD ≥ 1.0. The permutation test now uses the median. Batching is equivalent within ±1.2 %.
+  - Re-analysis: `scripts/audit_checks.py`.
+- **CI:** per-test and job timeouts, the crash-and-resume demo, and a check that a fresh benchmark run reproduces the committed rows.
+- **AutoLab's findings** (the safe-state sweep isn't fault-isolated, no single-writer lock, surviving mutants, seeding) are being fixed in the AutoLab repo. Repin here once they land.
+- **Open, needs Steven:**
+  - whether to fix I_k (it changes every benchmark number);
+  - whether to re-run `schema.kql` on the live cluster.
 
 ## 2026-11-15 — Parallel reactor batches (AutoLab stage 8)
 
@@ -65,7 +93,7 @@
 
 ## 2026-11-14 — Self-shading
 
-- **Decision (agreed with Steven):** add Beer–Lambert self-shading, but not a carbon limit. The simulated reactor always doses CO₂, so a carbon limit would only fit the validation's air-only case.
+- **Decision:** add Beer–Lambert self-shading, but not a carbon limit. The simulated reactor always doses CO₂, so a carbon limit would only fit the validation's air-only case.
 - **Source:** k = 0.228 m²/g from Kuhfuß et al. 2022 (*C. vulgaris*, read and checked), not tuned to the validation data. The light path is 5 cm, illustrative, set before rerunning. The light response is averaged over 16 layers (within 0.002 of a fine reference).
 - **Effect:** dense cultures now need more light; the demo's best culture moved to 278 µmol/m²/s, and ODs are lower and more realistic. All faults still fail QC, and the pipeline still matches.
 - **Validation rerun:** 9 of 12 runs pass at 5 cm (median ratio 1.05×, was 2.1×). The result moves with the unreported vessel depth (5 of 12 at 3 cm, 8 of 12 at 8 cm). The temperature ranking is still backwards (−0.77).
@@ -82,7 +110,7 @@
 
 ## 2026-11-13 — Optimiser benchmark
 
-- **Decision (agreed with Steven):** benchmark AutoLab's optimiser against random search and a grid. 30 paired runs per method, 18 experiments each. Score with 3-D hypervolume against a reference point from device limits only, plus best OD750; use distribution-free paired statistics.
+- **Decision:** benchmark AutoLab's optimiser against random search and a grid. 30 paired runs per method, 18 experiments each. Score with 3-D hypervolume against a reference point from device limits only, plus best OD750; use distribution-free paired statistics.
 - **Finding (from the AutoLab session):** AutoLab seeds each trial's sampler with campaign seed + index, so adjacent campaign seeds share start-up designs. Benchmark seeds are spaced 1000 apart.
 - **Decision:** AutoLab gained an optional `optimization.grid_levels` setting (commit 780937b, approved by Steven) so a grid can name its levels. algae-sim now pins AutoLab `26bfc8b`, which adds only a README line on top.
 - **Result:**

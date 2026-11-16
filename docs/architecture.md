@@ -36,7 +36,13 @@ The adapter owns the device:
 - Its manifest declares the **controlled variables** with units, ranges, resolution and whether each is measured: `temperature` 20–36 °C (no cooling), `light_intensity` 0–500 µmol/m²/s, `ph` 6.0–9.0. It also declares **protection limits** (39 °C; pH 5.5 and 9.8) and metered **resources** (`energy` in kWh, `co2` in g). AutoLab reads these rather than assuming them. The table lives once, in `device/core.py`.
 - A command must name exactly those variables: unknown ones are refused (`unknown_variable`), and so are missing ones (`missing_variable`), because the device has nothing to hold a missing one at. It re-checks every range itself.
 - Each accepted command starts a fresh batch, simulating re-inoculation.
-- Telemetry reports `applied`, `measured` (temperature and pH; `None` is a probe dropout) and `consumption` (cumulative since the command) dicts, plus trips and faults. Trip faults name the limit: `over_temperature_trip`, `ph_low_trip`, `ph_high_trip`. It never reports true state.
+- Telemetry reports `applied`, `measured` (temperature and pH; `None` is a probe dropout) and `consumption` (cumulative since the command) dicts, plus trips and faults. Trip faults name the limit: `over_temperature_trip`, `over_temperature_cutout_trip`, `ph_low_trip`, `ph_high_trip`; an expired hold adds `hold_expired`. It never reports true state.
+- **Device rules (firmware, `device/core.py`):**
+  - each hold has an **owner**, the client's controller ID or `settings.owner`; another owner can't replace it until it ends or is released;
+  - anyone may request **safe state**, but only the owner restarts the reactor;
+  - a reused `command_id` must repeat the *same* request, or it's refused (`command_id_reused`);
+  - the over-temperature trip and the independent **hardware cutout** (40 °C, sensing the vessel, not the probe) latch. The reactor then refuses new holds (`protection_latched`) until an operator calls `POST /v1/reactors/<id>/release`. pH trips latch for the rest of the hold;
+  - a **watchdog** ends every hold at `MAX_HOLD_H` (96 h) by entering safe state.
 - Safe state turns the heater and lights off and shuts off the CO₂; pH keeps reporting.
 
 **Parallel batches (AutoLab stage 8).** With `optimization.batch_size: k`, AutoLab splits `reactor_ids` into k consecutive groups and runs k conditions at once, one per group, under a shared barrier clock. The adapters need no change, because AutoLab serialises calls to the controller and the sensor. The benchmark's batch arm uses 9 reactors (`reactor_ids` set in both `culture_design` and the controller settings).

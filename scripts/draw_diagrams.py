@@ -139,7 +139,7 @@ def azure_diagram(t: dict[str, str]) -> str:
                                                 "→ uploader, same parse rules",
                                                 "retries after outages"))
     blob = Box(420, 30, 300, 112, "Blob Storage", ("every batch, byte for byte",
-                                                    "role: write blobs only"), accent=True)
+                                                    "role: blob read and write"), accent=True)
     adx = Box(420, 196, 300, 132, "Data Explorer", ("tables → dedupe views → report",
                                                      "role: ingest + read only",
                                                      "free cluster"), accent=True)

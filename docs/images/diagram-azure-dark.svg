@@ -14,7 +14,7 @@
 <rect x="420" y="30" width="300" height="112" rx="10" fill="#1d2a3a" stroke="#3987e5" stroke-width="1.2"/>
 <text x="436" y="59" font-size="15" font-weight="700" fill="#f0efec">Blob Storage</text>
 <text x="436" y="84" font-size="13" fill="#c3c2b7">every batch, byte for byte</text>
-<text x="436" y="103" font-size="13" fill="#c3c2b7">role: write blobs only</text>
+<text x="436" y="103" font-size="13" fill="#c3c2b7">role: blob read and write</text>
 <rect x="420" y="196" width="300" height="132" rx="10" fill="#1d2a3a" stroke="#3987e5" stroke-width="1.2"/>
 <text x="436" y="225" font-size="15" font-weight="700" fill="#f0efec">Data Explorer</text>
 <text x="436" y="250" font-size="13" fill="#c3c2b7">tables → dedupe views → report</text>
