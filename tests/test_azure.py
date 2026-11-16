@@ -62,7 +62,7 @@ class TestSchema:
             assert f".create-merge table {table} (" in kql
             assert f"ingestion json mapping '{mapping_name(table)}'" in kql
         assert "EnvironmentClean on table Environment" in kql
-        assert "summarize arg_max(ingested_at, *) by device_id, sequence" in kql
+        assert "summarize arg_min(ingested_at, *) by device_id, sequence" in kql
         assert "policy ingestionbatching" in kql and "00:00:30" in kql
 
 

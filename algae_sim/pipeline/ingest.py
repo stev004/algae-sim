@@ -9,7 +9,7 @@ and answers with what happened to every line::
      "rejected": [{"line": 7, "reason": "invalid_json"}]}
 
 A 200 reply means the batch is durably stored (raw file and database transaction
-both done), so the uploader may advance its cursor. Rejected lines are part of a
+both fsynced), so the uploader may advance its cursor. Rejected lines are part of a
 successful reply: they're quarantined with a reason, and resending them would never
 help. Only failures to *store* return an error, which tells the uploader to retry.
 
@@ -47,16 +47,16 @@ class IngestService:
         batch_id = f"{received_at:%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:8]}"
         raw_path = self.raw.put(batch_id, received_at, body)  # raw first: always auditable
         outcome = BatchOutcome(batch_id=batch_id)
-        rows: list[Row] = []
+        rows: list[tuple[int, str, Row]] = []
         rejections: list[tuple[int, str, str, str]] = []
         for number, line in enumerate(body.splitlines(), start=1):
             if not line.strip():
                 continue
             outcome.lines += 1
+            text = line.decode("utf-8", errors="replace")[:2000]
             try:
-                rows.append(parse_line(line))
+                rows.append((number, text, parse_line(line)))
             except Rejected as exc:
-                text = line.decode("utf-8", errors="replace")[:2000]
                 rejections.append((number, exc.reason, exc.detail, text))
                 outcome.rejected.append({"line": number, "reason": exc.reason})
         return self.db.record_batch(

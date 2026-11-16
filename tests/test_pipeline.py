@@ -28,6 +28,7 @@ def start_hold(core, reactor="reactor-1", setpoint=30.0, light=150.0, ph=7.5, n=
     return core.apply_setpoints(
         command_id=f"cmd-{reactor}-{n}", experiment_id=f"exp-{n}", reactor_id=reactor,
         setpoints={"temperature": setpoint, "light_intensity": light, "ph": ph},
+        owner="test-client",
     )
 
 
@@ -85,7 +86,7 @@ def test_capture_is_off_by_default():
 def test_service_writes_the_capture_log_and_repairs_a_torn_line(tmp_path):
     service = DeviceService(DeviceSettings(), capture_dir=tmp_path, start_time=START)
     service.handle("POST", "/v1/reactors/reactor-1/setpoints", {
-        "command_id": "c1", "experiment_id": "e1",
+        "command_id": "c1", "experiment_id": "e1", "owner": "test-client",
         "setpoints": {"temperature": 30, "light_intensity": 150, "ph": 7.5},
     })
     service.handle("POST", "/v1/clock/advance", {"to": (START + timedelta(hours=1)).isoformat()})

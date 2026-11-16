@@ -27,15 +27,16 @@
 '[{"column":"blob_name","path":"$.blob_name"},{"column":"lines","path":"$.lines"},{"column":"rows","path":"$.rows"},{"column":"rejected","path":"$.rejected"},{"column":"batch_id","path":"$.batch_id"},{"column":"ingested_at","path":"$.ingested_at"}]'
 
 // One row per message: resends and replays land twice in the raw tables,
-// and these views keep the latest copy of each (device_id, sequence).
+// and these views keep the first copy of each (device_id, sequence), the
+// same rule as the local SQLite store.
 .create-or-alter materialized-view with (backfill=true) EnvironmentClean on table Environment
 {
-    Environment | summarize arg_max(ingested_at, *) by device_id, sequence
+    Environment | summarize arg_min(ingested_at, *) by device_id, sequence
 }
 
 .create-or-alter materialized-view with (backfill=true) OdClean on table Od
 {
-    Od | summarize arg_max(ingested_at, *) by device_id, sequence
+    Od | summarize arg_min(ingested_at, *) by device_id, sequence
 }
 
 // Per hold (one reactor's culture under one command), from stored data only.

@@ -179,14 +179,15 @@ def schema_kql(database: str = DATABASE_DEFAULT) -> str:
         ]
     out += [
         "// One row per message: resends and replays land twice in the raw tables,",
-        "// and these views keep the latest copy of each (device_id, sequence).",
+        "// and these views keep the first copy of each (device_id, sequence), the",
+        "// same rule as the local SQLite store.",
     ]
     for table in ("Environment", "Od"):
         out += [
             ".create-or-alter materialized-view with (backfill=true)"
             f" {table}Clean on table {table}",
             "{",
-            f"    {table} | summarize arg_max(ingested_at, *) by device_id, sequence",
+            f"    {table} | summarize arg_min(ingested_at, *) by device_id, sequence",
             "}",
             "",
         ]
