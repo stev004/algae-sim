@@ -91,7 +91,10 @@ class SimulatedReactorController:
                 rejection_message=str(exc),
                 acknowledged_at=self.core.now,
             )
-        ack = self.core.apply_setpoints(**fields)
+        # One process, one client: the controller's own ID is the owner.
+        ack = self._call(
+            lambda: self.core.apply_setpoints(**fields, owner=self._controller_id)
+        )
         return convert.acknowledgement(self._controller_id, ack, self.core.manifest())
 
     async def read_telemetry(self, reactor_id: str) -> EnvironmentTelemetry:

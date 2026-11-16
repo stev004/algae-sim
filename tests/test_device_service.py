@@ -113,6 +113,7 @@ def test_repeated_command_is_applied_once():
     core = DeviceCore(DeviceSettings(), start_time=START)
     fields = dict(
         command_id="c1", experiment_id="e1", reactor_id="reactor-1", setpoints=SETPOINTS,
+        owner="client-a",
     )
     first = core.apply_setpoints(**fields)
     again = core.apply_setpoints(**fields)
@@ -124,7 +125,7 @@ def test_state_survives_a_service_restart(tmp_path):
     service = DeviceService(DeviceSettings(), state_dir=tmp_path, start_time=START)
     service.core.apply_setpoints(
         command_id="c1", experiment_id="e1", reactor_id="reactor-2",
-        setpoints={**SETPOINTS, "temperature": 28.0},
+        setpoints={**SETPOINTS, "temperature": 28.0}, owner="client-a",
     )
     service.advance(START + timedelta(hours=5))
     service.stop()
@@ -161,7 +162,7 @@ def test_http_setpoints_must_be_an_object_of_numbers():
             except urllib.error.HTTPError as exc:
                 return exc.code, json.load(exc)
 
-        base = {"command_id": "c1", "experiment_id": "e1"}
+        base = {"command_id": "c1", "experiment_id": "e1", "owner": "client-a"}
         assert post({**base, "temperature_c": 30})[0] == 400  # the v1 shape is gone
         assert post({**base, "setpoints": {"ph": "acid"}})[0] == 400
         status, ack = post({**base, "setpoints": SETPOINTS})

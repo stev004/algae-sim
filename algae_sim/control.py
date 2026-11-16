@@ -4,8 +4,10 @@
 plus two protective rules:
 
 * fail-safe: a missing reading turns the heater off;
-* over-temperature trip: a reading at or above ``trip_c`` latches the heater off
-  until the reading falls below ``trip_c - trip_reset_band_c``.
+* over-temperature trip: a reading at or above ``trip_c`` latches the heater off.
+  It stays latched however far the reading falls; only ``reset()`` clears it, and
+  the device only resets it when an operator releases the reactor. A trip that
+  cleared itself would let a fault that heats the culture cycle on and off.
 
 ``PhController`` holds pH by dosing CO2; its own rules are on the class.
 
@@ -22,7 +24,6 @@ class HysteresisController:
     setpoint_c: float
     band_c: float = 0.3
     trip_c: float = 39.0
-    trip_reset_band_c: float = 2.0
     heater_on: bool = False
     tripped: bool = False
     trip_count: int = 0
@@ -41,11 +42,8 @@ class HysteresisController:
             self.heater_on = False
             return 0.0
         if self.tripped:
-            if measured_c < self.trip_c - self.trip_reset_band_c:
-                self.tripped = False
-            else:
-                self.heater_on = False
-                return 0.0
+            self.heater_on = False
+            return 0.0
         if measured_c >= self.trip_c:
             self.tripped = True
             self.trip_count += 1
@@ -56,6 +54,11 @@ class HysteresisController:
         elif measured_c >= self.setpoint_c + self.band_c:
             self.heater_on = False
         return 1.0 if self.heater_on else 0.0
+
+    def reset(self) -> None:
+        """Clear a latched trip. Only an operator action on the device calls this."""
+        self.tripped = False
+        self.heater_on = False
 
 
 @dataclass(slots=True)
@@ -69,11 +72,17 @@ class PhController:
     * fail-safe: a missing pH reading closes the valve, because dosing blind risks
       the dangerous direction (acid overdose);
     * low trip: a reading at or below ``low_trip`` closes the supply shutoff, a
-      separate valve that still works if the dosing valve is stuck open. It stays
-      closed until pH recovers above ``low_trip + trip_reset_band``;
-    * high trip: a reading at or above ``high_trip`` raises an alarm. There is no
-      base dosing, so the device can only report it. It typically means the CO2
-      supply has failed while photosynthesis keeps raising pH.
+      separate valve that still works if the dosing valve is stuck open. It
+      latches for the rest of the hold. An earlier version reopened the shutoff
+      once pH recovered, which let a stuck-open valve cycle through trip after
+      trip and keep overdosing;
+    * high trip: a reading at or above ``high_trip`` raises an alarm, which also
+      latches. There is no base dosing, so the device can only report it. It
+      typically means the CO2 supply has failed while photosynthesis keeps raising
+      pH.
+
+    A new hold (a fresh culture) starts with a fresh controller, so pH trips clear
+    there; they are process protection, not a hazard to people or equipment.
 
     Like the thermostat, it sees measurements only, never the true pH.
     """
@@ -82,7 +91,6 @@ class PhController:
     band: float = 0.05
     low_trip: float = 5.5
     high_trip: float = 9.8
-    trip_reset_band: float = 0.5
     valve_open: bool = False
     low_tripped: bool = False
     high_tripped: bool = False
@@ -114,11 +122,8 @@ class PhController:
             return False
         self._check_high_trip(measured)
         if self.low_tripped:
-            if measured > self.low_trip + self.trip_reset_band:
-                self.low_tripped = False
-            else:
-                self.valve_open = False
-                return False
+            self.valve_open = False
+            return False
         if measured <= self.low_trip:
             self.low_tripped = True
             self.trip_count += 1
@@ -131,9 +136,6 @@ class PhController:
         return self.valve_open
 
     def _check_high_trip(self, measured: float) -> None:
-        if self.high_tripped:
-            if measured < self.high_trip - self.trip_reset_band:
-                self.high_tripped = False
-        elif measured >= self.high_trip:
+        if not self.high_tripped and measured >= self.high_trip:
             self.high_tripped = True
             self.trip_count += 1

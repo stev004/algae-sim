@@ -28,6 +28,10 @@ def _parser() -> argparse.ArgumentParser:
     device_sub = device.add_subparsers(dest="device_command", required=True)
     serve = device_sub.add_parser("serve", help="start the device service (Ctrl-C to stop)")
     serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument(
+        "--allow-remote", action="store_true",
+        help="allow a non-loopback --host (there is no authentication)",
+    )
     serve.add_argument("--port", type=int, default=8750)
     serve.add_argument(
         "--speed", type=float, default=0.0,
@@ -51,6 +55,10 @@ def _parser() -> argparse.ArgumentParser:
     ingest = pipeline_sub.add_parser("ingest", help="run the ingest endpoint (Ctrl-C to stop)")
     ingest.add_argument("--data", type=Path, default=Path("runs/pipeline"))
     ingest.add_argument("--host", default="127.0.0.1")
+    ingest.add_argument(
+        "--allow-remote", action="store_true",
+        help="allow a non-loopback --host (there is no authentication)",
+    )
     ingest.add_argument("--port", type=int, default=8760)
     upload = pipeline_sub.add_parser("upload", help="ship a device capture log to the ingest")
     upload.add_argument("--capture", type=Path, required=True, help="the device's capture DIR")
@@ -132,6 +140,7 @@ def device_main(args: argparse.Namespace) -> None:
     from algae_sim.device.core import DeviceSettings
     from algae_sim.device.service import DeviceService, serve
 
+    _require_loopback(args.host, args.allow_remote)
     raw = {} if args.settings is None else json.loads(args.settings.read_text())
     service = DeviceService(
         DeviceSettings.from_mapping(raw),
@@ -200,6 +209,7 @@ def pipeline_main(args: argparse.Namespace) -> None:
 
     from algae_sim.pipeline.ingest import IngestService, serve
 
+    _require_loopback(args.host, args.allow_remote)
     service = IngestService(args.data)
 
     def ready(server: object) -> None:
@@ -215,6 +225,27 @@ def pipeline_main(args: argparse.Namespace) -> None:
         serve(service, host=args.host, port=args.port, ready=ready)
     except KeyboardInterrupt:
         print("ingest stopped", flush=True)
+
+
+def _require_loopback(host: str, allowed: bool) -> None:
+    """Refuse to expose an unauthenticated service to the network by accident."""
+    import ipaddress
+
+    if host == "localhost":
+        return
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = False
+    if loopback:
+        return
+    if not allowed:
+        raise SystemExit(
+            f"refusing to listen on {host}: the service has no authentication, so any "
+            "machine that can reach it could control it. Pass --allow-remote if you "
+            "really mean it."
+        )
+    print(f"WARNING: listening on {host} with no authentication", flush=True)
 
 
 def main(argv: list[str] | None = None) -> None:

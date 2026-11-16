@@ -105,3 +105,48 @@ def test_run_record_files(tmp_path):
 def test_invalid_config_rejected(kwargs):
     with pytest.raises(ValueError):
         ReactorConfig(**kwargs)
+
+
+# -- independent protection (system level) -------------------------------------------
+
+
+def test_cutout_catches_a_probe_that_reads_low():
+    # The probe reads 4 °C low at a 36 °C setpoint, so the thermostat drives the
+    # vessel to ~40 °C and its own trip (on the same bad probe) never fires. The
+    # independent cutout senses the vessel itself and cuts heater power.
+    result = run_batch(
+        ReactorConfig(temperature_setpoint_c=36.0, temperature_sensor_offset_c=-4.0, **SHORT)
+    )
+    assert result.trip_count == 0  # the software trip was fooled
+    assert result.max_true_temperature_c < 40.5  # the cutout wasn't
+
+
+def test_cutout_stops_a_heater_stuck_on_where_safe_state_cannot():
+    from algae_sim.reactor import Reactor
+
+    # A warm room (25 °C): flat out, this heater would settle near 45 °C.
+    reactor = Reactor(
+        ReactorConfig(
+            heater_fails_after_h=1.0, heater_failure="on",
+            ambient_c=25.0, start_temperature_c=25.0, **SHORT,
+        )
+    )
+    for _ in range(round(2 * 3600 / reactor.config.dt_s)):
+        reactor.step()
+    reactor.enter_safe_state()  # a welded relay ignores this...
+    for _ in range(round(10 * 3600 / reactor.config.dt_s)):
+        reactor.step()
+    assert reactor.cutout.opened  # ...so the cutout is what stopped it
+    assert reactor.max_true_temperature_c < 40.5
+    assert reactor.true_temperature_c < 30.0  # power stayed cut; the vessel cooled
+
+
+def test_stuck_open_valve_trips_once_instead_of_cycling():
+    # Before the low-pH trip latched, a stuck-open valve cycled through six trips
+    # in 36 h and nearly doubled the CO2 used.
+    healthy = run_batch(ReactorConfig(batch_hours=36.0))
+    stuck = run_batch(
+        ReactorConfig(batch_hours=36.0, co2_valve_sticks="open", co2_valve_sticks_after_h=4.0)
+    )
+    assert stuck.ph_trip_count == 1
+    assert stuck.co2_g <= healthy.co2_g
