@@ -5,7 +5,7 @@
 ## Current handoff — 2026-11-15
 
 **State.** algae-sim is complete as a portfolio piece. The [case study](case-study.md) is the entry point.
-- It speaks AutoLab culture contract v2, pinned to AutoLab `176cebc` (stage 8 plus the audit fixes, on AutoLab branch `claude/audit-fixes-5358f2`, not yet merged to AutoLab main).
+- It speaks AutoLab culture contract v2, pinned to AutoLab `176cebc` (stage 8 plus the audit fixes; AutoLab main since 2026-11-19).
 - Growth uses cited *C. vulgaris* values, with self-shading ([model.md](model.md)).
 - Against a real experiment, 9 of 12 runs pass at a 5 cm light path, but the temperature ranking is backwards ([validation.md](validation.md)).
 - Benchmark: +2.4 % hypervolume over random search, 24 of 30 runs, p = 0.001, all from thin, cheap cultures. With parallel batches of 3 on 9 reactors, about the same result comes in 6 culture rounds instead of 18 (−1.0 % to +1.6 %) ([benchmark.md](benchmark.md)).
@@ -48,12 +48,11 @@ An audit written as if by a lab-automation lead reproduced real gaps. The fixes 
   - Benchmark: the edge is in thin, cheap cultures, and nothing is cheaper at OD ≥ 1.0. The permutation test now uses the median.
   - Re-analysis: `scripts/audit_checks.py`.
 - **CI:** per-test and job timeouts, the crash-and-resume demo, and a check that a fresh benchmark run reproduces the committed rows.
-- **AutoLab's findings** (the safe-state sweep isn't fault-isolated, no single-writer lock, surviving mutants, seeding) are fixed on AutoLab branch `claude/audit-fixes-5358f2`. algae-sim is repinned to its head, `176cebc`.
+- **AutoLab's findings** (the safe-state sweep isn't fault-isolated, no single-writer lock, surviving mutants, seeding) are fixed in AutoLab `176cebc`, fast-forwarded to AutoLab main on 2026-11-19. algae-sim pins that commit.
 - **Repin consequences:**
   - The new seed scheme changes every optimiser proposal, so the benchmark was rerun: +2.4 % instead of +2.9 %, and the same conclusions.
   - The demo's heater faults moved to start-up experiments 1 and 4, because 5 and 6 now sit near room temperature, where a dead heater is harmless.
   - The Azure chart in the case study is from the earlier campaign.
-- **Open, needs Steven:** merge the AutoLab branch to AutoLab main, then repin to the merged commit if it differs.
 - **Open, needs Steven:**
   - whether to fix I_k (it changes every benchmark number);
   - whether to re-run `schema.kql` on the live cluster.
