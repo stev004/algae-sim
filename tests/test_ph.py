@@ -54,20 +54,21 @@ class TestController:
         c.decide(7.5)
         assert c.decide(None) is False and c.missing_reading_count == 1
 
-    def test_low_trip_latches_the_shutoff_until_ph_recovers(self):
+    def test_low_trip_latches_the_shutoff_for_the_rest_of_the_hold(self):
         c = PhController(setpoint=7.0)
         assert c.decide(5.5) is False and c.low_tripped and c.shutoff_closed
-        assert c.decide(5.9) is False and c.low_tripped  # within the reset band
-        c.decide(6.1)
-        assert not c.low_tripped and c.trip_count == 1
+        # Recovery doesn't reopen it: a stuck-open valve would just overdose again.
+        for ph in (6.1, 7.0, 7.5, 8.0):
+            assert c.decide(ph) is False and c.low_tripped and c.shutoff_closed
+        assert c.trip_count == 1
 
-    def test_high_trip_is_an_alarm_that_counts_once(self):
+    def test_high_trip_is_a_latched_alarm_that_counts_once(self):
         c = PhController(setpoint=7.0)
         c.decide(9.8)
         c.decide(9.9)
         assert c.high_tripped and c.trip_count == 1 and not c.shutoff_closed
-        c.decide(9.2)
-        assert not c.high_tripped
+        c.decide(7.2)
+        assert c.high_tripped and c.trip_count == 1  # still latched, not re-counted
 
     def test_setpoint_band_must_sit_inside_the_trips(self):
         with pytest.raises(ValueError):

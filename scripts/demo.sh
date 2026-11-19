@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command demo: a full AutoLab culture campaign on the simulated reactor.
-# 20 experiments x 3 replicate reactors = 60 simulated 36 h cultures, about 15 s
+# 20 experiments x 3 replicate reactors = 60 simulated 36 h cultures, well under a minute
 # of simulation once dependencies are installed.
 # Writes everything under runs/demo/ (git-ignored) and draws charts into runs/demo/charts/.
 set -euo pipefail

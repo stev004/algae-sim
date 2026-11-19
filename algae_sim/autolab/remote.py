@@ -26,9 +26,14 @@ adapter compares the device clock with AutoLab's clock:
 Use ``execution.clock: simulated`` with this adapter; a paced device runs faster
 than a wall clock.
 
+**Ownership.** Every hold names an owner, and the device refuses to let a different
+owner replace it. The owner is ``settings.owner``, or the controller ID if unset, so
+two AutoLab configurations driving the same device should use different ones.
+
 Settings (``execution.controller.settings``): ``url`` (default
-``http://127.0.0.1:8750``), ``request_timeout_s`` (5), ``resend_attempts`` (2),
-``clock_wait_timeout_s`` (600) and ``poll_interval_s`` (0.05).
+``http://127.0.0.1:8750``), ``owner`` (the controller ID), ``request_timeout_s``
+(5), ``resend_attempts`` (2), ``clock_wait_timeout_s`` (600) and
+``poll_interval_s`` (0.05).
 """
 
 from __future__ import annotations
@@ -83,6 +88,7 @@ class Refused(Exception):
 @dataclass(frozen=True, slots=True)
 class RemoteSettings:
     url: str = "http://127.0.0.1:8750"
+    owner: str | None = None  # defaults to the controller ID
     request_timeout_s: float = 5.0
     resend_attempts: int = 2
     clock_wait_timeout_s: float = 600.0
@@ -282,6 +288,7 @@ class RemoteReactorController:
             raise ControllerError("device_unreachable", str(exc), retry_safe=True) from exc
         path = f"/v1/reactors/{command.reactor_id}/setpoints"
         body = {k: v for k, v in fields.items() if k != "reactor_id"}
+        body["owner"] = self._settings.owner or self._controller_id
         last: Exception | None = None
         for attempt in range(1 + self._settings.resend_attempts):
             try:

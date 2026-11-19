@@ -8,9 +8,18 @@ What a real reactor controller would do lives here, independent of any lab softw
   **re-check its own limits**, and start a fresh batch (a simulated re-inoculation)
   on that reactor;
 * treat a repeated ``command_id`` as the same command (idempotent): a client that
-  retries after a lost reply gets the original acknowledgement, not a second batch;
+  retries after a lost reply gets the original acknowledgement, not a second batch.
+  A reused ``command_id`` with a *different* request is refused, never mistaken
+  for a retry;
+* give each hold an **owner** (the client that started it). Until the hold ends,
+  only its owner may replace it. Anyone may put a reactor in safe state, but only
+  the owner can start it again;
 * run each reactor's own thermostat, pH controller (CO2 dosing) and protection
-  trips (over-temperature, pH low, pH high);
+  trips (over-temperature, pH low, pH high), plus an independent hardware
+  over-temperature cutout. Trips latch: the over-temperature trip and the cutout
+  stay latched until an operator **releases** the reactor;
+* end any hold that reaches ``MAX_HOLD_H`` by putting the reactor in safe state:
+  a watchdog, so a client that vanishes can't leave a reactor heating forever;
 * report only attested telemetry: measured temperature and pH, applied setpoints,
   trips, faults, cumulative energy and CO2, and the command it is holding;
 * enter a safe state (heater off, lights off, CO2 shut off) on request;
@@ -27,6 +36,7 @@ All values are illustrative; the growth model is not validated.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -48,8 +58,9 @@ PH_HIGH_TRIP = 9.8
 OD_MAX = 4.0
 CAPTURE_INTERVAL_S = 600.0  # one environment sample per reactor per 10 device-minutes
 CAPTURE_SCHEMA_VERSION = "3"
+CUTOUT_C = 40.0  # independent hardware cutout, above the software trip
 # Bumped when the pickled DeviceCore layout changes; older state files are refused.
-STATE_VERSION = 3
+STATE_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +117,7 @@ class DeviceSettings:
     # per hold, hold N is the reactor's part of experiment N.
     heater_faults: Mapping[str, tuple[int, ...]] | None = None
     heater_fault_after_h: float = 4.0
+    heater_fault_mode: str = "off"  # the heater fails "off" (open) or "on" (stuck relay)
     culture_crashes: Mapping[str, tuple[int, ...]] | None = None
     culture_crash_after_h: float = 12.0
     temperature_dropout_probability: float = 0.0
@@ -133,6 +145,8 @@ class DeviceSettings:
         settings = cls(**values)
         if not settings.reactor_ids:
             raise DeviceError("settings_invalid", "need at least one reactor")
+        if settings.heater_fault_mode not in ("off", "on"):
+            raise DeviceError("settings_invalid", "heater_fault_mode must be off or on")
         if settings.co2_valve_fault_mode not in ("open", "closed"):
             raise DeviceError("settings_invalid", "co2_valve_fault_mode must be open or closed")
         for key in FAULT_TABLES:
@@ -154,6 +168,7 @@ class DeviceSettings:
             "ambient_c": self.ambient_c,
             "heater_faults": {k: list(v) for k, v in (self.heater_faults or {}).items()},
             "heater_fault_after_h": self.heater_fault_after_h,
+            "heater_fault_mode": self.heater_fault_mode,
             "culture_crashes": {k: list(v) for k, v in (self.culture_crashes or {}).items()},
             "culture_crash_after_h": self.culture_crash_after_h,
             "temperature_dropout_probability": self.temperature_dropout_probability,
@@ -176,7 +191,10 @@ class Batch:
     command_id: str
     experiment_id: str
     applied: dict[str, float]  # the setpoints the device accepted, by variable name
+    owner: str  # the client that started the hold; only it may replace the hold
     acknowledgement: dict[str, Any] = field(default_factory=dict)
+    expired: bool = False  # reached MAX_HOLD_H; the watchdog put it in safe state
+    released: bool = False  # an operator ended the hold and cleared latched trips
     next_capture_s: float = 0.0  # hold-elapsed time of the next environment sample
     was_tripped: bool = False  # protection state at the last step, to catch new trips
 
@@ -193,6 +211,7 @@ class DeviceCore:
         self.batches: dict[str, Batch] = {}
         self.holds: dict[str, int] = {}
         self.acknowledged: dict[str, dict[str, Any]] = {}  # command_id -> ack (idempotency)
+        self.fingerprints: dict[str, str] = {}  # command_id -> hash of what was asked
         # Capture is off unless a host (the device service) enables it and drains it.
         self.capture_source: str | None = None
         self.outbox: list[dict[str, Any]] = []
@@ -213,7 +232,11 @@ class DeviceCore:
         if when > self.now:
             self.now = when
         for reactor_id, batch in self.batches.items():
-            target_s = (self.now - batch.started_at).total_seconds()
+            if batch.expired or batch.released:
+                continue  # the hold is over; nothing more to simulate
+            # Never step past the maximum hold: that bounds the work any one clock
+            # move can cause, and it's where the watchdog ends the hold.
+            target_s = min((self.now - batch.started_at).total_seconds(), MAX_HOLD_H * 3600)
             reactor = batch.reactor
             dt = reactor.config.dt_s
             while reactor.elapsed_s + dt <= target_s + 1e-9:
@@ -228,6 +251,12 @@ class DeviceCore:
                         # taken in safe state don't describe the hold.
                         self._capture_environment(reactor_id, batch, scheduled=False)
                 batch.was_tripped = tripped
+            if reactor.elapsed_s + dt > MAX_HOLD_H * 3600 + 1e-9:
+                # Watchdog: the hold has run its maximum. Make it safe and end it.
+                reactor.enter_safe_state()
+                batch.expired = True
+                if self.capture_source:
+                    self._capture_environment(reactor_id, batch, scheduled=False)
         return self.now
 
     # -- description ---------------------------------------------------------------
@@ -239,6 +268,7 @@ class DeviceCore:
             "reactor_ids": list(self.settings.reactor_ids),
             "controlled_variables": {name: v.as_dict() for name, v in VARIABLES.items()},
             "protection_limits": {name: dict(limit) for name, limit in PROTECTION_LIMITS.items()},
+            "hardware_cutout_c": CUTOUT_C,
             "resources": dict(RESOURCES),
             "maximum_hold_h": MAX_HOLD_H,
             "od750_range": [0.0, OD_MAX],
@@ -257,24 +287,37 @@ class DeviceCore:
         experiment_id: str,
         reactor_id: str,
         setpoints: Mapping[str, float],
+        owner: str,
     ) -> dict[str, Any]:
-        """Start a hold. ``setpoints`` must name exactly ``VARIABLES``, in their units."""
+        """Start a hold. ``setpoints`` must name exactly ``VARIABLES``, in their units.
+
+        ``owner`` names the client. It's a guard against two clients driving the
+        same reactor by accident, not security: there is no authentication.
+        """
+        if not owner:
+            raise DeviceError("bad_request", "owner is required")
+        fingerprint = _fingerprint(owner, experiment_id, reactor_id, setpoints)
         previous = self.acknowledged.get(command_id)
         if previous is not None:
+            if self.fingerprints.get(command_id) != fingerprint:
+                # Same ID, different request: answering "duplicate" would tell the
+                # client its command was applied when it never was.
+                raise DeviceError(
+                    "command_id_reused",
+                    f"command {command_id} was already used for a different request",
+                )
             return {**previous, "duplicate": True}
         refusal = self._refusal(reactor_id, setpoints)
         if refusal is not None:
-            ack = {
-                "command_id": command_id,
-                "reactor_id": reactor_id,
-                "accepted": False,
-                "rejection_code": refusal[0],
-                "rejection_message": refusal[1],
-                "acknowledged_at": self.now.isoformat(),
-            }
+            ack = self._rejection(command_id, reactor_id, refusal)
             self.acknowledged[command_id] = ack
+            self.fingerprints[command_id] = fingerprint
             return ack
-        self.advance_to(self.now)  # bring other reactors up to date first
+        self.advance_to(self.now)  # bring every reactor up to date first
+        # Not remembered: once the reactor is free, the same command may succeed.
+        busy = self._busy(reactor_id, owner)
+        if busy is not None:
+            return self._rejection(command_id, reactor_id, busy)
         hold = self.holds.get(reactor_id, 0)
         self.holds[reactor_id] = hold + 1
         s = self.settings
@@ -290,6 +333,7 @@ class DeviceCore:
             heater_fails_after_h=(
                 s.heater_fault_after_h if s.faulted("heater_faults", reactor_id, hold) else None
             ),
+            heater_failure=s.heater_fault_mode,
             culture_crash_after_h=(
                 s.culture_crash_after_h if s.faulted("culture_crashes", reactor_id, hold) else None
             ),
@@ -316,12 +360,44 @@ class DeviceCore:
             command_id=command_id,
             experiment_id=experiment_id,
             applied=applied,
+            owner=owner,
             acknowledgement=ack,
         )
         self.acknowledged[command_id] = ack
+        self.fingerprints[command_id] = fingerprint
         if self.capture_source:
             self._capture_environment(reactor_id, self.batches[reactor_id])
         return ack
+
+    def _rejection(
+        self, command_id: str, reactor_id: str, refusal: tuple[str, str]
+    ) -> dict[str, Any]:
+        return {
+            "command_id": command_id,
+            "reactor_id": reactor_id,
+            "accepted": False,
+            "rejection_code": refusal[0],
+            "rejection_message": refusal[1],
+            "acknowledged_at": self.now.isoformat(),
+        }
+
+    def _busy(self, reactor_id: str, owner: str) -> tuple[str, str] | None:
+        """Why this owner can't start a hold on the reactor now, if it can't."""
+        batch = self.batches.get(reactor_id)
+        if batch is None or batch.released:
+            return None
+        if _latched(batch.reactor):
+            return (
+                "protection_latched",
+                f"{reactor_id} has a latched over-temperature trip; an operator must "
+                "inspect it and release the reactor first",
+            )
+        if not batch.expired and batch.owner != owner:
+            return (
+                "reactor_owned",
+                f"{reactor_id} is held by {batch.owner!r} until its hold ends or is released",
+            )
+        return None
 
     def _refusal(
         self, reactor_id: str, setpoints: Mapping[str, float]
@@ -369,6 +445,27 @@ class DeviceCore:
             "acknowledged_at": self.now.isoformat(),
         }
 
+    def release(self, reactor_id: str, reason: str) -> dict[str, Any]:
+        """Operator action: end the hold, clear latched trips, free the reactor.
+
+        Like a reset button on the cabinet, it's meant for a person who has looked
+        at the reactor, not for automation. AutoLab never calls it.
+        """
+        self._known(reactor_id)
+        self.advance_to(self.now)
+        batch = self.batches.get(reactor_id)
+        if batch is not None:
+            batch.reactor.enter_safe_state()
+            batch.reactor.controller.reset()
+            batch.reactor.cutout.reset()
+            batch.released = True
+        return {
+            "reactor_id": reactor_id,
+            "reason": reason,
+            "released": batch is not None,
+            "acknowledged_at": self.now.isoformat(),
+        }
+
     # -- observation --------------------------------------------------------------
 
     def telemetry(self, reactor_id: str) -> dict[str, Any]:
@@ -381,9 +478,14 @@ class DeviceCore:
             "measured": _measured(reactor),
             "consumption": _consumption(reactor),
             "protection_tripped": _tripped(reactor),
-            "trip_count": reactor.controller.trip_count + reactor.ph_controller.trip_count,
-            "faults": _faults(reactor),
+            "trip_count": (
+                reactor.controller.trip_count
+                + reactor.ph_controller.trip_count
+                + reactor.cutout.trip_count
+            ),
+            "faults": _faults(reactor) + (["hold_expired"] if batch.expired else []),
             "active_command_id": None if reactor.safe_state else batch.command_id,
+            "owner": batch.owner,
             "hold_elapsed_h": round(reactor.elapsed_s / 3600, 4),
         }
 
@@ -490,8 +592,15 @@ class DeviceCore:
                 reactors[reactor_id] = {"state": "idle", "holds": self.holds.get(reactor_id, 0)}
                 continue
             r = batch.reactor
+            if batch.released:
+                state = "released"
+            elif batch.expired:
+                state = "expired"
+            else:
+                state = "safe" if r.safe_state else "holding"
             reactors[reactor_id] = {
-                "state": "safe" if r.safe_state else "holding",
+                "state": state,
+                "owner": batch.owner,
                 "holds": self.holds.get(reactor_id, 0),
                 "command_id": batch.command_id,
                 "applied": _applied(batch),
@@ -539,7 +648,25 @@ def _consumption(reactor: Reactor) -> dict[str, float]:
 
 
 def _tripped(reactor: Reactor) -> bool:
-    return reactor.controller.tripped or reactor.ph_controller.tripped
+    return reactor.controller.tripped or reactor.ph_controller.tripped or reactor.cutout.opened
+
+
+def _latched(reactor: Reactor) -> bool:
+    """A safety trip that only an operator may clear (pH trips clear with a new hold)."""
+    return reactor.controller.tripped or reactor.cutout.opened
+
+
+def _fingerprint(
+    owner: str, experiment_id: str, reactor_id: str, setpoints: Mapping[str, float]
+) -> str:
+    """What a command asked for, so a reused ``command_id`` can be told from a retry."""
+    request = {
+        "owner": owner,
+        "experiment_id": experiment_id,
+        "reactor_id": reactor_id,
+        "setpoints": {name: float(value) for name, value in sorted(setpoints.items())},
+    }
+    return hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
 
 
 def _faults(reactor: Reactor) -> list[str]:
@@ -556,6 +683,8 @@ def _faults(reactor: Reactor) -> list[str]:
             faults.append("ph_probe_dropout")
     if reactor.controller.tripped:
         faults.append("over_temperature_trip")
+    if reactor.cutout.opened:
+        faults.append("over_temperature_cutout_trip")
     if reactor.ph_controller.low_tripped:
         faults.append("ph_low_trip")
     if reactor.ph_controller.high_tripped:

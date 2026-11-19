@@ -53,14 +53,53 @@ class OpticalDensitySensor:
 
 @dataclass(slots=True)
 class Heater:
-    """Applies a commanded fraction. A failed heater applies nothing."""
+    """Applies a commanded fraction, unless it has failed.
+
+    ``failure`` is ``"off"`` (an open element: applies nothing) or ``"on"`` (a welded
+    relay: full power whatever it is told, including in safe state). Only the
+    thermal cutout, which sits in the power line, can stop a heater stuck on.
+    """
 
     failed: bool = False
+    failure: str = "off"
 
-    def apply(self, commanded_fraction: float) -> float:
+    def apply(self, commanded_fraction: float, *, power_cut: bool = False) -> float:
         if not 0.0 <= commanded_fraction <= 1.0:
             raise ValueError("commanded heater fraction must be between 0 and 1")
-        return 0.0 if self.failed else commanded_fraction
+        if self.failure not in ("off", "on"):
+            raise ValueError("failure must be 'off' or 'on'")
+        if power_cut:
+            return 0.0
+        if self.failed:
+            return 1.0 if self.failure == "on" else 0.0
+        return commanded_fraction
+
+
+@dataclass(slots=True)
+class ThermalCutout:
+    """An independent over-temperature cutout in the heater's power line.
+
+    It stands in for a manual-reset bimetal thermostat bolted to the vessel: its own
+    sensing element, no software and no shared probe. So a probe that reads low, or
+    a heater stuck on, cannot defeat it. Once it opens it stays open until someone
+    resets it by hand (``reset()``). ``offset_c`` is its own calibration error,
+    independent of the temperature probe's.
+    """
+
+    open_at_c: float = 40.0
+    offset_c: float = 0.0
+    opened: bool = False
+    trip_count: int = 0
+
+    def sense(self, true_temperature_c: float) -> bool:
+        """Return True while the cutout is open (heater power cut)."""
+        if not self.opened and true_temperature_c + self.offset_c >= self.open_at_c:
+            self.opened = True
+            self.trip_count += 1
+        return self.opened
+
+    def reset(self) -> None:
+        self.opened = False
 
 
 @dataclass(slots=True)

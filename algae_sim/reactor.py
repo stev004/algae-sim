@@ -27,6 +27,7 @@ from algae_sim.instruments import (
     OpticalDensitySensor,
     PhSensor,
     TemperatureSensor,
+    ThermalCutout,
 )
 from algae_sim.records import TelemetrySample
 from algae_sim.thermal import ThermalParams, step_temperature
@@ -50,6 +51,8 @@ class ReactorConfig:
     seed: int = 0
     # Fault injection
     heater_fails_after_h: float | None = None
+    heater_failure: str = "off"  # "off" (open element) or "on" (welded relay)
+    cutout_offset_c: float = 0.0  # calibration error of the independent cutout
     temperature_dropout_probability: float = 0.0
     temperature_sensor_offset_c: float = 0.0
     ph_dropout_probability: float = 0.0
@@ -75,6 +78,8 @@ class ReactorConfig:
             raise ValueError("light must be non-negative")
         if self.co2_valve_sticks not in (None, "open", "closed"):
             raise ValueError("co2_valve_sticks must be None, 'open' or 'closed'")
+        if self.heater_failure not in ("off", "on"):
+            raise ValueError("heater_failure must be 'off' or 'on'")
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -131,7 +136,8 @@ class Reactor:
             dropout_probability=config.ph_dropout_probability,
             rng=random.Random(rng.getrandbits(32)),
         )
-        self.heater = Heater()
+        self.heater = Heater(failure=config.heater_failure)
+        self.cutout = ThermalCutout(offset_c=config.cutout_offset_c)
         self.co2_valve = Co2Valve()
         self.controller = HysteresisController(setpoint_c=config.temperature_setpoint_c)
         self.ph_controller = PhController(setpoint=config.ph_setpoint)
@@ -164,7 +170,9 @@ class Reactor:
         self.last_measured_c = self.temperature_sensor.read(self.true_temperature_c)
         decided = self.controller.decide(self.last_measured_c)
         self.last_command = 0.0 if self.safe_state else decided
-        self.last_applied = self.heater.apply(self.last_command)
+        # The cutout senses the vessel itself, not the probe (see ThermalCutout).
+        power_cut = self.cutout.sense(self.true_temperature_c)
+        self.last_applied = self.heater.apply(self.last_command, power_cut=power_cut)
         self.last_measured_ph = self.ph_sensor.read(self.true_ph)
         wants_co2 = self.ph_controller.decide(self.last_measured_ph)
         self.last_valve_command = wants_co2 and not self.safe_state

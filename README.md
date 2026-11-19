@@ -18,7 +18,7 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/progress-dark.png">
-  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.24" src="docs/images/progress.png">
+  <img alt="Final OD750 per experiment: random start-up trials, then the optimiser's choices, with the best result so far rising to OD 1.29" src="docs/images/progress.png">
 </picture>
 
 <picture>
@@ -31,13 +31,13 @@ One demo campaign: 20 experiments × 3 replicate reactors = 60 simulated 36-hour
   <img alt="Pass or fail for every reactor in every experiment, with the reason for each failure" src="docs/images/qc.png">
 </picture>
 
-> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**: [checked against a real experiment](docs/validation.md), it gets the typical growth rate about right once self-shading is included, but prefers warmer temperatures than the measured strain. Nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
+> Growth parameters are drawn from published *Chlorella vulgaris* literature, with every source and its confidence listed in [the model notes](docs/model.md#where-the-numbers-come-from). They are literature-typical values, not a fit to one strain; the carbonate buffer is still illustrative. The model is **not validated**: [checked against a real experiment](docs/validation.md), it gets the typical growth rate about right once self-shading is included (a constant growth rate does as well), but prefers warmer temperatures than the measured strain. Nothing here predicts real algae behaviour. AutoLab's evidence marks every reading as coming from a simulated sensor.
 
 **New here? Start with the [case study](docs/case-study.md)**: the architecture, the results and the Azure setup on one page, with diagrams.
 
 ## Benchmark: does the optimiser help?
 
-30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser finds **2.9 % better growth/energy/CO₂ trade-offs than random search** (better in 22 of 30 pairs, p < 0.001) but no denser cultures, and beats the grid on both. The result held before and after the growth model gained self-shading. With AutoLab's parallel batches (3 conditions at once on 9 reactors), the optimiser reaches the same result in **6 rounds of culture instead of 18**. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
+30 paired runs each of AutoLab's optimiser, random search and a grid, 18 experiments per run. On the simulated reactor, the optimiser scores **2.4 % higher than random search on the combined growth/energy/CO₂ score** (better in 24 of 30 pairs, p = 0.001), and beats the grid on both counts. The edge comes from cheap, thin cultures: at a useful density (OD ≥ 1.0) it finds nothing cheaper than random search, and no denser cultures. With AutoLab's parallel batches (3 conditions at once on 9 reactors), the optimiser reaches the same result in **6 rounds of culture instead of 18**. Real hardware adds drift, failures and noisier biology that could erase an edge this small. Method, statistics and limits: [docs/benchmark.md](docs/benchmark.md).
 
 ## Quick start
 
@@ -84,25 +84,26 @@ uv run python -m algae_sim run --heater-fails-after 6 --plot runs/heater-fail.pn
 | Idea | Where |
 |---|---|
 | **True state, measurement, decision and actuation kept separate.** Controllers and AutoLab only ever see noisy, quantised sensor readings | `reactor.py`, `instruments.py` |
-| **The device owns safety.** An on-board thermostat with a fail-safe on lost readings and a latching over-temperature trip, and a pH controller that doses CO2, closes the valve on a lost reading and shuts the supply off on a low-pH trip, even past a stuck-open valve. Works with AutoLab disconnected | `control.py`, `instruments.py` |
+| **The device owns safety.** An on-board thermostat with a fail-safe on lost readings and an over-temperature trip that latches until an operator releases the reactor. An independent hardware cutout that doesn't share the thermostat's probe, so a probe reading low or a heater stuck on can't defeat it. A pH controller that doses CO2, closes the valve on a lost reading and latches the supply shut on a low-pH trip, even past a stuck-open valve. A watchdog that ends any hold at 96 h. Works with AutoLab disconnected | `control.py`, `instruments.py`, `device/core.py` |
+| **One client per reactor.** Each hold has an owner, and another client can't replace it or restart a reactor someone else made safe. That guards against accidents, not attacks: there is no authentication, so the services refuse a non-loopback address unless told otherwise | `device/core.py`, `cli.py` |
 | **Coupled variables, honestly modelled.** pH and CO2 aren't independent knobs: photosynthesis raises pH, CO2 lowers it, gas exchange pulls it towards air equilibrium. So a lower pH costs more CO2, and the optimiser trades growth against energy and CO2 | `carbon.py` |
 | **A commandable-device adapter.** Declares named controlled variables, refuses commands that name unknown or missing ones, re-checks its own limits, acknowledges the values it actually applied, reports only attested telemetry, honours safe state, tracks the command it holds | `autolab/controller.py` |
 | **A read-only instrument adapter.** OD750 probe with open, self-test and calibration checks, and identity-bound evidence | `autolab/sensor.py` |
-| **Simulated time.** Follows AutoLab's clock, so a 36-hour hold runs in milliseconds; AutoLab refuses a skipping clock unless the device declares itself simulated | `autolab/controller.py` |
+| **Simulated time.** Follows AutoLab's clock, so a 36-hour hold runs in well under a second; AutoLab refuses a skipping clock unless the device declares itself simulated | `autolab/controller.py` |
 | **A device that outlives its client.** The reactor bank runs as its own HTTP service with persisted state. It keeps holding while AutoLab is down, and AutoLab resumes the hold after a crash | `device/service.py`, `scripts/resume_demo.sh` |
-| **Honest failure semantics on a network.** "Never reached the device" is reported differently from "sent, no reply". Lost replies are resolved by resending the same command ID, which the device recognises and doesn't apply twice. Persistent silence is reported to AutoLab as ambiguous | `autolab/remote.py`, `device/core.py` |
+| **Honest failure semantics on a network.** "Never reached the device" is reported differently from "sent, no reply". Lost replies are resolved by resending the same command ID, which the device recognises and doesn't apply twice; a reused ID with a different request is refused. Persistent silence is reported to AutoLab as ambiguous | `autolab/remote.py`, `device/core.py` |
 | **Fault injection to prove QC.** Per-replicate heater failures, culture crashes and stuck CO2 valves. AutoLab's per-replicate QC and its 2-of-3 replicate rule catch them | `configs/culture-algae-sim.yaml` |
-| **A data pipeline that can't lose or double-count.** The device logs what it measured, and a separate uploader buffers through outages and retries. The ingest keeps raw batches, validates every line, quarantines bad ones with a reason, and dedupes resends by device and sequence | `pipeline/`, `scripts/pipeline_demo.sh` |
+| **A data pipeline that doesn't lose data silently.** The device logs what it measured and never reuses a sequence number, even after losing its state. A separate uploader buffers through outages, and only moves on once a reply confirms the batch. The ingest keeps raw batches, validates every line, quarantines bad ones with a reason, and dedupes resends by device and sequence. A "duplicate" that carries different data is quarantined as a conflict, not dropped | `pipeline/`, `scripts/pipeline_demo.sh` |
 | **Reproducibility.** Seeded instruments; each culture's seed is the device seed, the reactor and that reactor's culture number, so rerunning a campaign gives byte-identical evidence and charts | `reactor.py`, `device/core.py` |
 
 The injected faults in the demo config:
 
 | Experiment | Fault | AutoLab's verdict |
 |---|---|---|
-| 5 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control`; 2 of 3 pass, so the experiment counts |
-| 6 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
+| 1 | reactor-2's heater fails at hour 4 | That replicate fails `temperature_control`; 2 of 3 pass, so the experiment counts |
+| 4 | reactor-1's and reactor-2's heaters fail | Only 1 of 3 passes, so the experiment fails QC and isn't learned from |
 | 9 | reactor-3's culture crashes at hour 12 | Contamination screen `growth_plausible` flags the OD drops; 2 of 3 pass |
-| 11 | reactor-1's CO2 valve sticks open at hour 4 | The device trips on low pH and shuts off the CO2; AutoLab stops that replicate (`no_protection_trip`, `control:ph`); 2 of 3 pass |
+| 11 | reactor-1's CO2 valve sticks open at hour 4 | The device trips on low pH and latches the CO2 off; AutoLab stops that replicate (`no_protection_trip`, `control:ph`); 2 of 3 pass |
 
 ## Layout
 

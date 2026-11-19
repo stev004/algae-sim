@@ -3,7 +3,7 @@
     uv run python -m algae_sim.autolab.benchmark run OUTPUT_DIR [--runs 30] [--workers 8]
     uv run python -m algae_sim.autolab.benchmark analyse OUTPUT_DIR
 
-Design (agreed with Steven, 2026-11-13):
+Design (decided 2026-11-13):
 
 * **Arms.** AutoLab's optimiser (``bayesian``: 8 random start-up experiments, then
   multi-objective TPE), pure random search, and a fixed 3 x 3 x 2 grid. Every arm
@@ -321,15 +321,17 @@ def compare(
 
     Both are distribution-free: with 30 pairs there is no reason to assume the
     differences are normal. The permutation test asks how often randomly swapping
-    arm labels within pairs gives a mean difference at least as large (two-sided);
-    the bootstrap resamples pairs to put a 95 % interval on the median difference.
+    arm labels within pairs gives a median difference at least as large
+    (two-sided); the bootstrap resamples pairs to put a 95 % interval on the same
+    median. Using one statistic for the headline, the interval and the test keeps
+    them answering one question. (Until 2026-11-16 the test used the mean.)
     """
     diffs = [a - b for a, b in zip(optimiser, baseline, strict=True)]
     rng = random.Random(seed)
-    observed = abs(statistics.fmean(diffs))
+    observed = abs(statistics.median(diffs))
     trials = 20_000
     extreme = sum(
-        abs(statistics.fmean(d if rng.random() < 0.5 else -d for d in diffs)) >= observed
+        abs(statistics.median([d if rng.random() < 0.5 else -d for d in diffs])) >= observed
         for _ in range(trials)
     )
     medians = sorted(

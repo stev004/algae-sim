@@ -25,7 +25,11 @@ azure = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.3,<9", "ruff>=0.9,<1"]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-timeout>=2.3,<3",
+    "ruff>=0.9,<1",
+]
 
 [project.scripts]
 algae-sim = "algae_sim.cli:main"
@@ -40,7 +44,7 @@ algae-sim-reactor = "algae_sim.autolab.controller:create_controller"
 algae-sim-device = "algae_sim.autolab.remote:create_remote_controller"
 
 [tool.uv.sources]
-autonomous-lab = { git = "https://github.com/stev004/autolab", rev = "796aed39c8a8725d30f5f99e977366b1d6b203ea" }
+autonomous-lab = { git = "https://github.com/stev004/autolab", rev = "176cebcac5ffe4be6c5fd0e4a50ef3ac87aa67c6" }
 
 [tool.hatch.metadata]
 allow-direct-references = true

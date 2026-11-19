@@ -5,7 +5,13 @@ import random
 import pytest
 
 from algae_sim.control import HysteresisController
-from algae_sim.instruments import OD750_PER_G_PER_L, Heater, OpticalDensitySensor, TemperatureSensor
+from algae_sim.instruments import (
+    OD750_PER_G_PER_L,
+    Heater,
+    OpticalDensitySensor,
+    TemperatureSensor,
+    ThermalCutout,
+)
 
 
 class TestSensors:
@@ -34,6 +40,19 @@ class TestSensors:
         assert Heater().apply(1.0) == 1.0
         assert Heater(failed=True).apply(1.0) == 0.0
 
+    def test_heater_stuck_on_ignores_its_command_but_not_the_cutout(self):
+        stuck = Heater(failed=True, failure="on")
+        assert stuck.apply(0.0) == 1.0
+        assert stuck.apply(0.0, power_cut=True) == 0.0
+
+    def test_cutout_opens_at_its_limit_and_stays_open_until_reset(self):
+        cutout = ThermalCutout(open_at_c=40.0)
+        assert not cutout.sense(39.9)
+        assert cutout.sense(40.0)
+        assert cutout.sense(25.0)  # cooling doesn't close it
+        cutout.reset()
+        assert not cutout.sense(25.0) and cutout.trip_count == 1
+
 
 class TestController:
     def test_hysteresis_band(self):
@@ -50,12 +69,14 @@ class TestController:
         assert c.decide(None) == 0.0
         assert c.missing_reading_count == 1
 
-    def test_over_temperature_trip_latches_until_cool(self):
-        c = HysteresisController(setpoint_c=30.0, trip_c=39.0, trip_reset_band_c=2.0)
+    def test_over_temperature_trip_latches_until_reset(self):
+        c = HysteresisController(setpoint_c=30.0, trip_c=39.0)
         assert c.decide(39.2) == 0.0 and c.tripped
-        assert c.decide(37.5) == 0.0  # still latched
-        assert c.decide(36.5) == 0.0 and not c.tripped  # reset, but above setpoint
-        assert c.decide(29.5) == 1.0  # normal control resumes
+        # However far it cools, the heater stays off: latching means a person resets it.
+        for reading in (37.5, 36.5, 29.5, 20.0):
+            assert c.decide(reading) == 0.0 and c.tripped
+        c.reset()
+        assert c.decide(29.5) == 1.0  # normal control resumes only after the reset
         assert c.trip_count == 1
 
     def test_setpoint_too_close_to_trip_rejected(self):

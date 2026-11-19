@@ -13,3 +13,6 @@ runs/
 
 # Local Azure addresses (not secrets, but personal; see configs/azure.example.json)
 configs/*.local.json
+
+# Local agent tooling (session closeout map); kept on disk, not published
+.claude/

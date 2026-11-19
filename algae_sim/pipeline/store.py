@@ -6,13 +6,19 @@ Two stores, on purpose:
   It's the audit trail: if a parse rule turns out wrong, the clean tables can be
   rebuilt from it. (Azure version: a Blob Storage container.)
 * ``Database`` holds the parsed rows. ``(device_id, sequence)`` identifies a message,
-  so a resent or replayed message is counted as a duplicate and stored once.
-  Rejected lines are kept with their reason, not thrown away. (Azure version:
-  Data Explorer tables.)
+  so a resent or replayed message is counted as a duplicate and stored once. A
+  duplicate must also *match* the stored copy: a known key carrying different data
+  means the device reused a sequence number, and that message is quarantined as a
+  ``sequence_conflict`` rather than dropped. Rejected lines are kept with their
+  reason, not thrown away. (Azure version: Data Explorer tables.)
+
+Durability: the raw file and the SQLite transaction are both on disk (fsync)
+before the ingest answers 200.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -39,6 +45,7 @@ create table if not exists message_keys (
     sequence integer not null,
     kind text not null,
     batch_id text not null,
+    content_hash text not null,
     primary key (device_id, sequence)
 );
 create table if not exists environment (
@@ -97,8 +104,12 @@ class RawStore:
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{batch_id}.jsonl"
         tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(body)
+        with tmp.open("wb") as handle:
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp, path)
+        _fsync_dir(folder)
         return path
 
 
@@ -127,6 +138,8 @@ class Database:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
+        # FULL: a committed batch survives power loss, which the 200 reply promises.
+        self.connection.execute("pragma synchronous = FULL")
         self.connection.executescript(SCHEMA)
         self.lock = threading.Lock()
 
@@ -136,21 +149,37 @@ class Database:
     def record_batch(
         self,
         outcome: BatchOutcome,
-        rows: list[Row],
+        rows: list[tuple[int, str, Row]],
         rejections: list[tuple[int, str, str, str]],
         *,
         received_at: datetime,
         raw_path: Path,
     ) -> BatchOutcome:
-        """Store one batch in a single transaction: all of it lands, or none of it."""
+        """Store one batch in a single transaction: all of it lands, or none of it.
+
+        ``rows`` are ``(line number, raw line, parsed row)``; the raw line is kept if
+        the row turns out to conflict with one already stored.
+        """
+        rejections = list(rejections)
         with self.lock, self.connection as db:
-            for row in rows:
+            for number, raw, row in rows:
+                content = _content_hash(row)
                 inserted = db.execute(
-                    "insert or ignore into message_keys values (?, ?, ?, ?)",
-                    (row.device_id, row.sequence, row.kind, outcome.batch_id),
+                    "insert or ignore into message_keys values (?, ?, ?, ?, ?)",
+                    (row.device_id, row.sequence, row.kind, outcome.batch_id, content),
                 ).rowcount
                 if not inserted:
-                    outcome.duplicates += 1
+                    (stored,) = db.execute(
+                        "select content_hash from message_keys"
+                        " where device_id = ? and sequence = ?",
+                        (row.device_id, row.sequence),
+                    ).fetchone()
+                    if stored == content:
+                        outcome.duplicates += 1
+                    else:
+                        detail = f"{row.device_id} sequence {row.sequence} already holds other data"
+                        rejections.append((number, "sequence_conflict", detail, raw))
+                        outcome.rejected.append({"line": number, "reason": "sequence_conflict"})
                     continue
                 _insert_row(db, row)
                 outcome.stored += 1
@@ -171,6 +200,24 @@ class Database:
                 ),
             )
         return outcome
+
+
+def _content_hash(row: Row) -> str:
+    """A fingerprint of everything a row says, to tell a true repeat from a reuse."""
+    return hashlib.sha256(repr(row).encode()).hexdigest()
+
+
+def _fsync_dir(path: Path) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _insert_row(db: sqlite3.Connection, row: Row) -> None:

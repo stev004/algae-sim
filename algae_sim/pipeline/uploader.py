@@ -8,9 +8,13 @@ pipeline outage never touches the device or its control loop. The rules:
 * **The capture log is the buffer.** Nothing is held only in memory; if the
   pipeline is down, lines simply wait in the log.
 * **A cursor marks what has been acknowledged.** It's a byte offset into the log,
-  saved atomically *after* the ingest replies 200. A crash before that point means
-  the batch is sent again: at-least-once delivery. The ingest's
-  ``(device_id, sequence)`` key turns the resend into counted duplicates.
+  saved atomically *after* the ingest replies 200 with a well-formed answer. A
+  crash, or a reply it can't read, means the batch is sent again: at-least-once
+  delivery. The ingest's ``(device_id, sequence)`` key turns the resend into
+  counted duplicates.
+* **The cursor remembers which file it points into.** If the log is replaced
+  (rotated, or deleted and recreated), the uploader starts the new file from the
+  beginning rather than trusting an offset into a different file.
 * **Only complete lines are sent.** A line the device is still writing is left
   for the next pass.
 * **Back off while the pipeline is unreachable**, doubling the wait up to a cap.
@@ -18,6 +22,8 @@ pipeline outage never touches the device or its control loop. The rules:
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import http.client
 import json
 import os
@@ -74,14 +80,33 @@ class Uploader:
     # -- cursor ------------------------------------------------------------------------
 
     def cursor(self) -> int:
+        """The acknowledged offset into the *current* log file."""
         try:
-            return int(json.loads(self.cursor_file.read_text())["offset"])
+            saved = json.loads(self.cursor_file.read_text())
         except FileNotFoundError:
             return 0
+        offset = int(saved["offset"])
+        try:
+            size = self.capture_file.stat().st_size
+            current = _file_id(self.capture_file)
+        except FileNotFoundError:
+            return offset
+        if saved.get("file_id", current) != current or offset > size:
+            # A different file, or one shorter than what we've acknowledged: the log
+            # was replaced. Its contents are new to us, so send it from the start;
+            # anything already stored comes back as counted duplicates.
+            return 0
+        return offset
 
     def _save_cursor(self, offset: int) -> None:
+        state: dict[str, object] = {"offset": offset}
+        with contextlib.suppress(FileNotFoundError):  # no log yet: nothing to identify
+            state["file_id"] = _file_id(self.capture_file)
         tmp = self.cursor_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"offset": offset}) + "\n")
+        with tmp.open("w") as handle:
+            handle.write(json.dumps(state) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp, self.cursor_file)
 
     def reset(self) -> None:
@@ -116,14 +141,23 @@ class Uploader:
         if not batch:
             return None
         reply = (self.sender or self._post)(batch)
+        try:
+            sent = Sent(
+                lines=int(reply["lines"]),
+                stored=int(reply["stored"]),
+                duplicates=int(reply["duplicates"]),
+                rejected=len(reply["rejected"]),
+                pending_after=rest,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            # We can't tell what the ingest did, so don't acknowledge: resend later.
+            raise IngestUnavailable(f"unreadable reply from ingest: {exc!r}") from exc
+        expected = sum(1 for line in batch.splitlines() if line.strip())
+        if sent.lines != expected:
+            # An answer about some other batch, or a truncated upload: not an ack.
+            raise IngestUnavailable(f"ingest reported {sent.lines} lines, sent {expected}")
         self._save_cursor(end)  # only now is the batch acknowledged
-        return Sent(
-            lines=int(reply["lines"]),
-            stored=int(reply["stored"]),
-            duplicates=int(reply["duplicates"]),
-            rejected=len(reply["rejected"]),
-            pending_after=rest,
-        )
+        return sent
 
     def _post(self, body: bytes) -> dict:
         connection = http.client.HTTPConnection(self.host, self.port, timeout=self.timeout_s)
@@ -142,7 +176,10 @@ class Uploader:
             raise IngestUnavailable(f"HTTP {response.status}: {payload[:200]!r}")
         if response.status != 200:
             raise IngestRefused(f"HTTP {response.status}: {payload[:200]!r}")
-        return json.loads(payload)
+        try:
+            return json.loads(payload)
+        except ValueError as exc:
+            raise IngestUnavailable(f"200 reply that isn't JSON: {payload[:200]!r}") from exc
 
     def drain(self) -> list[Sent]:
         """Send batches until the log is caught up. Raises IngestUnavailable on outage."""
@@ -196,3 +233,17 @@ class Uploader:
                 report("caught up and idle; stopping")
                 return
             sleep(poll_s)
+
+
+def _file_id(path: Path) -> str:
+    """Identify the log file: its inode plus a hash of its first line.
+
+    The inode alone isn't enough: Linux often gives a new file the inode number
+    just freed by a deleted one. Every capture message carries a device ID,
+    sequence and timestamp, so two different logs never share a first line.
+    """
+    stat = path.stat()
+    with path.open("rb") as handle:
+        first = handle.readline(4096)
+    digest = hashlib.sha256(first).hexdigest()[:16]
+    return f"{stat.st_dev}:{stat.st_ino}:{digest}"

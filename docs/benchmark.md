@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Model](model.md) · [Architecture](architecture.md) · [Progress](progress.md)
 
-**Short answer:** on the simulated *Chlorella* reactor, AutoLab's optimiser finds better trade-offs between growth, energy and CO₂ than random search, by 2.9 % (median). That's small but consistent: it was better in 22 of 30 paired runs. It does not find denser cultures than random search. It beats a fixed grid clearly on both counts. The same conclusion held before and after the growth model gained self-shading, which is a useful robustness check. Running the optimiser in **parallel batches of 3** (AutoLab stage 8) reaches the same result in **6 rounds of culture instead of 18**, with no detectable loss of search efficiency. This is a result about a simulator, and the limits section says why it may not hold on real hardware.
+**Short answer:** on the simulated *Chlorella* reactor, AutoLab's optimiser scores 2.4 % (median) higher than random search on hypervolume, the combined growth/energy/CO₂ score. That's small but consistent: it was better in 24 of 30 paired runs. **But the edge comes from cheap, low-yield cultures.** Count only cultures above OD 0.8 and it shrinks to +1.6 %, no longer significant. At a useful density the optimiser's cheapest culture is no cheaper, in kWh or grams of CO₂, than random search's. It doesn't find denser cultures either. It does beat a fixed grid clearly. Running the optimiser in **parallel batches of 3** (AutoLab stage 8) reaches about the same result in **6 rounds of culture instead of 18**: within −1.0 % to +1.6 % of one at a time. This is a result about a simulator, and the limits section says why it may not hold on real hardware.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-progress-dark.png">
@@ -20,15 +20,16 @@ AutoLab chooses each culture's temperature, light and pH, aiming for high final 
   - **Random search:** AutoLab's `strategy: random`, uniform over the search space.
   - **Grid:** 3 temperatures (22, 28, 34 °C) × 3 light levels (60, 180, 400 µmol/m²/s) × 2 pH (6.5, 8.0), in AutoLab's lexicographic order. This uses the `grid_levels` option added to AutoLab for this benchmark.
 - **30 paired runs.** Run *k* gives all three methods the same simulated world (device seed *k* + 1), so a difference within a pair comes from the strategy, not from luckier noise.
-- **Independent seeds.** AutoLab seeds each trial's sampler with campaign seed + trial number, so neighbouring seeds would share most of their start-up designs. The seeds are spaced 1000 apart, more than the budget, and the pilot confirmed no two runs started alike.
+- **Independent seeds.** AutoLab derives each trial's sampler seed from a hash of the campaign seed and trial number (scheme `sha256-v1`, since AutoLab `176cebc`). Its earlier scheme, campaign seed + trial number, made neighbouring seeds share most of their start-up designs; seeds are still spaced 1000 apart, as they were under that scheme.
 - **No injected faults.** This measures search, not quality control. Every experiment passed QC.
 - **Main score: hypervolume.** This is the share of the outcome space (OD750 up; energy and CO₂ down) that a run's results dominate. Hypervolume is the standard score for multi-objective search, and the optimiser was asked to optimise all three goals, so scoring on OD alone would be unfair to it.
   - The reference point comes from device limits only, never from results: OD 0; 7.2 kWh, the heater plus lights flat out for 36 h; and 36 g CO₂, the valve open for 36 h.
   - The ideal is the OD sensor's ceiling of 4.0.
 - **Second score:** the best OD750 found, which is easier to read.
 - **Statistics:** distribution-free, because 30 paired differences need not be normal.
-  - A paired sign-flip permutation test (20,000 permutations, two-sided).
-  - A 95 % bootstrap interval on the median paired difference.
+  - A paired sign-flip permutation test on the median difference (20,000 permutations, two-sided).
+  - A 95 % bootstrap interval on the same median paired difference.
+  - Until 2026-11-16 the permutation test used the *mean* difference while the headline and interval used the median. On the earlier data, switching to the median moved hypervolume vs random from p = 0.0003 to 0.0007 and best OD from 0.31 to 0.38; no conclusion changed.
 
 Running 90 campaigns takes about 7 minutes on 8 cores.
 
@@ -36,14 +37,46 @@ Running 90 campaigns takes about 7 minutes on 8 cores.
 
 | Optimiser vs | Score | Optimiser better in | Median difference (95 % CI) | Relative | p |
 |---|---|---|---|---|---|
-| random search | hypervolume | 22 / 30 | +0.0062 (+0.0023 to +0.0114) | +2.9 % | < 0.001 |
-| random search | best OD750 | 11 / 30 | −0.008 (−0.043 to +0.009) | −0.6 % | 0.31 |
-| grid | hypervolume | 30 / 30 | +0.026 (+0.024 to +0.027) | +13.5 % | < 0.001 |
-| grid | best OD750 | 26 / 30 | +0.032 (+0.022 to +0.045) | +2.7 % | < 0.001 |
+| random search | hypervolume | 24 / 30 | +0.0052 (+0.0039 to +0.0085) | +2.4 % | 0.001 |
+| random search | best OD750 | 9 / 30 | −0.019 (−0.042 to −0.006) | −1.5 % | 0.12 |
+| grid | hypervolume | 30 / 30 | +0.025 (+0.022 to +0.027) | +12.7 % | < 0.001 |
+| grid | best OD750 | 26 / 30 | +0.037 (+0.018 to +0.045) | +3.0 % | < 0.001 |
 
-Relative differences are against the baseline's median. The three p-values below 0.001 stay below it after a Holm correction for the four tests. "< 0.001" means at or near the resolution of 20,000 permutations.
+Relative differences are against the baseline's median. All three significant p-values stay below 0.01 after a Holm correction for the four tests. On best OD against random search the bootstrap interval excludes zero but the permutation test doesn't (p = 0.12): if anything, random search found slightly denser cultures. "< 0.001" means at or near the resolution of 20,000 permutations.
 
-**Robustness to the model.** These numbers are from the growth model with self-shading (added 2026-11-14). Before shading, the same benchmark gave +2.5 % against random search (22 of 30, p < 0.001) with no difference in best OD, and +13.4 % against the grid. The conclusion didn't depend on that change to the biology.
+## Where the edge comes from
+
+Hypervolume rewards *any* culture that's cheap, however thin. So it matters where in the outcome space the optimiser gains.
+
+**Only counting cultures above a useful density:**
+
+| Hypervolume counting only OD above | Optimiser vs random | Better in | p |
+|---|---|---|---|
+| 0 (the headline) | +2.4 % | 24 / 30 | 0.001 |
+| 0.8 | +1.6 % | 17 / 30 | 0.10 |
+| 1.0 | +1.0 % | 16 / 30 | 0.79 |
+
+These keep the original reference point and drop points below the threshold. Raising the reference point to the threshold instead, as an external reviewer did, gives −1.9 % (12 / 30) at 0.8 and −7.2 % (11 / 30) at 1.0, neither significant. Either way, **the edge fades to nothing significant once thin cultures are excluded**. Whether it reverses depends on the scoring choice, so I don't claim it does.
+
+**Where the optimiser spends its experiments:** 72 % of its model-guided proposals (experiments 9–18) give OD below 1.0, against 53 % of random search's. It fills the cheap, thin corner of the outcome space, which hypervolume rewards.
+
+**In physical units.** The cheapest culture each run found that reaches a given density (median over runs):
+
+| At least OD | Energy, optimiser | Energy, random | CO₂, optimiser | CO₂, random |
+|---|---|---|---|---|
+| 1.0 | 2.43 kWh | 2.36 kWh | 5.2 g | 5.5 g |
+| 1.1 | 2.91 kWh | 2.87 kWh | 6.8 g | 6.8 g |
+| 1.2 | 3.36 kWh | 3.34 kWh | 10.6 g | 8.8 g |
+
+Five of the six paired differences are not significant (exact sign test p 0.59–1.0, Wilcoxon p 0.61–0.98). The sixth goes the wrong way: at OD ≥ 1.2, the optimiser's cheapest culture used **more** CO₂ than random search's (Wilcoxon p = 0.001, sign test p = 0.052). At OD 1.2, 3 runs (1 optimiser, 2 random) found no qualifying culture, leaving 27 pairs. **At a useful density, the optimiser does not find cheaper conditions than random search.**
+
+These checks were done after the results were seen, prompted by an external review, so treat them as diagnostics. The code is `scripts/audit_checks.py`.
+
+**Robustness.** These numbers are from the growth model with self-shading (added 2026-11-14) and AutoLab's `sha256-v1` seed scheme (2026-11-16).
+- Under the earlier seed scheme, the same benchmark gave +2.9 % against random search (22 of 30).
+- Before shading, it gave +2.5 % (22 of 30), with no difference in best OD, and +13.4 % against the grid.
+
+Across these three versions the edge stays at 2.4–2.9 %, so the conclusion doesn't hinge on one draw of seeds or on that change to the biology.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/benchmark-pairs-dark.png">
@@ -56,12 +89,14 @@ The optimiser spends its first 8 of 18 experiments sampling at random. Rerunning
 
 | Optimiser (4 start-up) vs | Score | Optimiser better in | Median difference (95 % CI) | Relative | p |
 |---|---|---|---|---|---|
-| random search | hypervolume | 26 / 30 | +0.0078 (+0.0054 to +0.0126) | +3.6 % | < 0.001 |
+| random search | hypervolume | 22 / 30 | +0.0070 (+0.0039 to +0.0103) | +3.3 % | < 0.001 |
 | random search | best OD750 | 8 / 30 | −0.006 (−0.036 to −0.002) | −0.5 % | 0.37 |
 | grid | hypervolume | 30 / 30 | +0.028 (+0.024 to +0.030) | +14.1 % | < 0.001 |
 | grid | best OD750 | 27 / 30 | +0.042 (+0.027 to +0.051) | +3.4 % | < 0.001 |
 
-The edge over random search grows from 2.9 % to 3.6 % (26 of 30 runs). Comparing the two optimiser settings directly, run for run, 4 start-up experiments beat 8 in 20 of 30 runs (p = 0.09), so the improvement is suggestive rather than established. (Before self-shading this comparison was 2.5 % → 5.5 %, p = 0.13.) On best OD the bootstrap interval only just excludes zero while the permutation test doesn't (p = 0.37). Either way the difference is half a percent. The 8-experiment setting stays the headline because it was chosen before the results were seen. Choosing the setting that happened to score best would overstate the effect.
+The p-values in this table come from the earlier mean-based permutation test; the start-up-4 observations aren't committed, so they haven't been recomputed.
+
+The edge over random search grows from 2.4 % to 3.3 %. Comparing the two optimiser settings directly, run for run, 4 start-up experiments beat 8 in 18 of 30 runs (+1.4 %, p = 0.12), so the improvement is suggestive rather than established. (Under the earlier seed scheme this comparison was 2.9 % → 3.6 %, p = 0.09; before self-shading, 2.5 % → 5.5 %, p = 0.13.) The 8-experiment setting stays the headline because it was chosen before the results were seen. Choosing the setting that happened to score best would overstate the effect.
 
 Reproduce with `--startup 4` on both `run` (optimiser arm only) and `analyse`.
 
@@ -78,11 +113,11 @@ AutoLab can now run several conditions at once: the optimiser asks for k proposa
 
 | Batches of 3 vs one at a time | Batch better in | Median difference (95 % CI) | p |
 |---|---|---|---|
-| At equal experiments (18 each): does batching cost search efficiency? | 15 / 30 | −0.00003 (−0.0025 to +0.0014) | 0.45 |
-| At equal culture time (6 rounds each): how far ahead is batching? | 30 / 30 | +0.042 (+0.034 to +0.047) | < 0.001 |
+| At equal experiments (18 each): does batching cost search efficiency? | 17 / 30 | +0.0011 (−0.0021 to +0.0036) | 0.49 |
+| At equal culture time (6 rounds each): how far ahead is batching? | 30 / 30 | +0.045 (+0.039 to +0.055) | < 0.001 |
 
 **Results:**
-- **No detectable efficiency cost.** At the same 18 experiments the two arms are indistinguishable, so a third of the culture time gives the same trade-off.
+- **Close, but not proven equivalent at a tight margin.** "No significant difference" alone isn't evidence of no difference. Here the 95 % interval, −0.0021 to +0.0036, is −1.0 % to +1.6 % of the one-at-a-time median. So batching costs at most about 1 % of search efficiency, and may cost nothing. That bound is under half the optimiser's +2.4 % edge over random search, but the interval as a whole is not much narrower than that edge. (Under the earlier seed scheme the interval was −1.2 % to +0.6 %.)
 - **The cost is hardware:** three times the reactors at once.
 - **Why proposals don't pile up:** AutoLab's TPE uses Optuna's "constant liar", which treats a round's pending experiments as provisional bad results, so the three proposals spread out rather than clustering.
 
@@ -92,14 +127,14 @@ AutoLab can now run several conditions at once: the optimiser asks for k proposa
 - **Reactors are identical apart from noise.** Real reactor banks have position effects such as light gradients or edge heating, and fixed slot-to-group placement would confound them.
 - **One planned measure was dropped.** I had planned to count rounds to reach the one-at-a-time *median*. About half of any arm's runs miss a median by definition, so it couldn't give a fair count. The equal-experiments comparison answers the same question.
 
-Regression check: on the stage 8 AutoLab (`796aed3`), the original three arms reproduce **byte-identical** observations, so `batch_size: 1` is unchanged.
+Regression check: when stage 8 landed (AutoLab `796aed3`), the original three arms reproduced **byte-identical** observations, so `batch_size: 1` was unchanged. The 2026-11-16 seed-scheme change deliberately changes every optimiser and batch proposal. The numbers on this page are rerun on it.
 
 ## What it means
 
-- **The optimiser learns something, but late, and only about the trade-off.**
+- **The optimiser learns something, but late, and not what a lab would want.**
   - The curves overlap during the 8 random start-up experiments, as they should. Once the optimiser starts choosing, it pulls ahead on hypervolume and stays ahead.
-  - It does this by finding conditions that use less energy and CO₂ for similar growth. That is what it was asked to do.
-  - It doesn't find denser cultures than random search: both end near OD 1.26.
+  - The gain is in cheap, thin cultures ("Where the edge comes from"). At a useful density it finds nothing cheaper than random search, and it doesn't find denser cultures: it ends at OD 1.25, random search at 1.27.
+  - That is partly the scoring's fault. Hypervolume with a reference at OD 0 values a cheap OD 0.4 culture. A campaign aimed at useful cultures should say so in its objective, for example with a minimum-OD constraint.
 - **Random search is a strong baseline here.**
   - The growth surface is smooth, with a single broad peak (cardinal temperature, light and pH curves).
   - 18 experiments in three dimensions are enough for random points to land near it.
@@ -127,4 +162,4 @@ uv run python -m algae_sim.autolab.benchmark run runs/benchmark --runs 30 --work
 uv run python -m algae_sim.autolab.benchmark analyse runs/benchmark
 ```
 
-The observations behind these numbers are in [benchmark/observations.jsonl](benchmark/observations.jsonl): every experiment's conditions and the replicate means the optimiser saw. The summary is in [benchmark/summary.json](benchmark/summary.json). Campaigns are deterministic, so the same code and pins give the same files. Code: `algae_sim/autolab/benchmark.py`. AutoLab is pinned at `796aed3` (stage 8). Run only the batch arm with `--arms batch`.
+The observations behind these numbers are in [benchmark/observations.jsonl](benchmark/observations.jsonl): every experiment's conditions and the replicate means the optimiser saw. The summary is in [benchmark/summary.json](benchmark/summary.json). Campaigns are deterministic, so the same code and pins give the same files. Code: `algae_sim/autolab/benchmark.py`. AutoLab is pinned at `176cebc` (stage 8 plus the audit fixes). Run only the batch arm with `--arms batch`.

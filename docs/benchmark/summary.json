@@ -2,8 +2,8 @@
   "arms": {
     "optimiser": {
       "runs": 30,
-      "median_hypervolume": 0.2212211974835433,
-      "median_best_od": 1.2541666666666667
+      "median_hypervolume": 0.22000600603823312,
+      "median_best_od": 1.2515
     },
     "random": {
       "runs": 30,
@@ -17,8 +17,8 @@
     },
     "batch": {
       "runs": 30,
-      "median_hypervolume": 0.22076949611921784,
-      "median_best_od": 1.25
+      "median_hypervolume": 0.21974018998385814,
+      "median_best_od": 1.2533333333333334
     }
   },
   "comparisons": [
@@ -26,30 +26,30 @@
       "metric": "hypervolume",
       "baseline": "random",
       "pairs": 30,
-      "optimiser_wins": 22,
-      "median_difference": 0.006178148379763618,
-      "ci_low": 0.0022796500013859966,
-      "ci_high": 0.01139110670992842,
-      "p_value": 0.00034998250087495624
+      "optimiser_wins": 24,
+      "median_difference": 0.005216808430015998,
+      "ci_low": 0.003918211373529226,
+      "ci_high": 0.008524900308783584,
+      "p_value": 0.0012499375031248437
     },
     {
       "metric": "best_od",
       "baseline": "random",
       "pairs": 30,
-      "optimiser_wins": 11,
-      "median_difference": -0.0076666666666667105,
-      "ci_low": -0.04300000000000004,
-      "ci_high": 0.009000000000000008,
-      "p_value": 0.30518474076296187
+      "optimiser_wins": 9,
+      "median_difference": -0.018500000000000072,
+      "ci_low": -0.041999999999999926,
+      "ci_high": -0.00550000000000006,
+      "p_value": 0.11619419029048547
     },
     {
       "metric": "hypervolume",
       "baseline": "grid",
       "pairs": 30,
       "optimiser_wins": 30,
-      "median_difference": 0.02629753463127564,
-      "ci_low": 0.02389652502929815,
-      "ci_high": 0.027419721876156836,
+      "median_difference": 0.024855260600488593,
+      "ci_low": 0.021934434222395827,
+      "ci_high": 0.026881703110409175,
       "p_value": 4.999750012499375e-05
     },
     {
@@ -57,10 +57,10 @@
       "baseline": "grid",
       "pairs": 30,
       "optimiser_wins": 26,
-      "median_difference": 0.032333333333333325,
-      "ci_low": 0.022166666666666668,
-      "ci_high": 0.04483333333333328,
-      "p_value": 4.999750012499375e-05
+      "median_difference": 0.03699999999999992,
+      "ci_low": 0.018000000000000016,
+      "ci_high": 0.04466666666666663,
+      "p_value": 9.99950002499875e-05
     }
   ],
   "batching": {
@@ -73,22 +73,22 @@
     "equal_experiments": {
       "baseline": "sequential",
       "pairs": 30,
-      "optimiser_wins": 15,
-      "median_difference": -2.7965324423048776e-05,
-      "ci_low": -0.0025419950224572635,
-      "ci_high": 0.0014149661418554615,
-      "p_value": 0.4450277486125694
+      "optimiser_wins": 17,
+      "median_difference": 0.0011145108319736974,
+      "ci_low": -0.00212553846569917,
+      "ci_high": 0.0036001519357462125,
+      "p_value": 0.48652567371631417
     },
     "equal_rounds": {
       "rounds": 6,
       "baseline": "sequential",
       "pairs": 30,
       "optimiser_wins": 30,
-      "median_difference": 0.0415576433098017,
-      "ci_low": 0.034145234467644114,
-      "ci_high": 0.04737585402483574,
+      "median_difference": 0.044958752774452465,
+      "ci_low": 0.03929837477128992,
+      "ci_high": 0.05535396713073998,
       "p_value": 4.999750012499375e-05
     },
-    "sequential_median_hypervolume": 0.2212211974835433
+    "sequential_median_hypervolume": 0.22000600603823312
   }
 }

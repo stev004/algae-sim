@@ -29,11 +29,18 @@ API (JSON bodies; errors are ``{"error": code, "message": text}``):
     GET  /v1/manifest                    capabilities and calibration
     GET  /v1/clock                       device time and mode
     POST /v1/clock/advance   {to}        lockstep only
-    POST /v1/reactors/<id>/setpoints  {command_id, experiment_id, setpoints: {name: value}}
+    POST /v1/reactors/<id>/setpoints  {command_id, experiment_id, owner,
+                                          setpoints: {name: value}}
                                          (names and units: the manifest's controlled_variables)
     GET  /v1/reactors/<id>/telemetry
     POST /v1/reactors/<id>/safe-state {reason}
+    POST /v1/reactors/<id>/release    {reason}   operator only: ends the hold, clears
+                                                 latched trips, frees the reactor
     GET  /v1/reactors/<id>/od
+
+Restart caveat: in paced mode a restored device carries on from its saved time, so
+time the service was down is skipped, not simulated. A real culture would keep
+living (uncontrolled) through the outage; this simulator doesn't model that.
 """
 
 from __future__ import annotations
@@ -56,6 +63,9 @@ STATE_FILE = "device.pickle"
 CAPTURE_FILE = "telemetry.jsonl"
 TICK_S = 0.05
 PERSIST_EVERY_S = 1.0
+# One clock move may cover at most this much device time. Holds end at
+# MAX_HOLD_H anyway; this refuses absurd requests before they reach the lock.
+MAX_ADVANCE = timedelta(days=30)
 
 ERROR_STATUS = {
     "unknown_reactor": HTTPStatus.NOT_FOUND,
@@ -101,6 +111,7 @@ class DeviceService:
         if self.capture_path is not None:
             self.core.enable_capture(device_id)
             self._repair_capture_log()
+            self._continue_sequences()
         self._anchor_device = self.core.now
         self._anchor_mono = time.monotonic()
         self._last_persist = 0.0
@@ -147,6 +158,10 @@ class DeviceService:
                 "device_free_running",
                 "device time runs on its own in paced mode; wait for it instead",
             )
+        if to - self.core.now > MAX_ADVANCE:
+            raise DeviceError(
+                "bad_request", f"advance at most {MAX_ADVANCE.days} days of device time at once"
+            )
         now = self.core.advance_to(to)
         # Clock moves are frequent; save at most once a second (commands save at once).
         if time.monotonic() - self._last_persist >= PERSIST_EVERY_S:
@@ -167,6 +182,41 @@ class DeviceService:
                 handle.seek(-1, os.SEEK_END)
                 if handle.read(1) != b"\n":
                     handle.write(b"\n")
+
+    def _continue_sequences(self) -> None:
+        """Never reuse a sequence number the capture log already holds.
+
+        The pipeline treats (device ID, sequence) as a message's identity. Two ways
+        to lose state would otherwise reuse numbers for *different* data, which the
+        pipeline would then drop as "duplicates":
+
+        * a crash after the log is written but before state is saved: the restored
+          device is slightly behind its own log;
+        * a lost or deleted state file: a fresh device starts again from 0.
+
+        So on start-up, carry on numbering after the highest sequence in the log.
+        A re-simulated stretch then arrives as new messages with later numbers,
+        visible rather than silently discarded.
+        """
+        path = self.capture_path
+        assert path is not None
+        if not path.exists():
+            return
+        highest: dict[str, int] = {}
+        prefix = f"{self.device_id}/"
+        with path.open("rb") as handle:
+            for line in handle:
+                try:
+                    message = json.loads(line)
+                    device, sequence = message["device_id"], int(message["sequence"])
+                except (ValueError, KeyError, TypeError):
+                    continue  # a torn line; the pipeline quarantines it
+                if isinstance(device, str) and device.startswith(prefix):
+                    reactor_id = device[len(prefix):]
+                    highest[reactor_id] = max(highest.get(reactor_id, -1), sequence)
+        for reactor_id, sequence in highest.items():
+            current = self.core.capture_sequences.get(reactor_id, 0)
+            self.core.capture_sequences[reactor_id] = max(current, sequence + 1)
 
     def flush_capture(self) -> int:
         """Append the firmware's outbox to the capture log and fsync it. Returns lines."""
@@ -189,7 +239,10 @@ class DeviceService:
         tmp = self.state_path.with_suffix(".tmp")
         with tmp.open("wb") as handle:
             pickle.dump(self.core, handle)
+            handle.flush()
+            os.fsync(handle.fileno())  # on disk before it replaces the old state
         os.replace(tmp, self.state_path)  # atomic: a crash never leaves half a file
+        _fsync_dir(self.state_path.parent)  # and the rename itself survives power loss
         self._last_persist = time.monotonic()
 
     # -- request handling ------------------------------------------------------------
@@ -229,6 +282,7 @@ class DeviceService:
                 experiment_id=_text(body, "experiment_id"),
                 reactor_id=reactor_id,
                 setpoints=_setpoints(body),
+                owner=_text(body, "owner"),
             )
             self.persist()
             return ack
@@ -236,6 +290,10 @@ class DeviceService:
             return self.core.telemetry(reactor_id)
         if method == "POST" and action == "safe-state":
             ack = self.core.safe_state(reactor_id, str(body.get("reason", "requested")))
+            self.persist()
+            return ack
+        if method == "POST" and action == "release":
+            ack = self.core.release(reactor_id, str(body.get("reason", "operator release")))
             self.persist()
             return ack
         if method == "GET" and action == "od":
@@ -253,6 +311,20 @@ class DeviceService:
             **extra,
             "device_time": self.core.now.isoformat(),
         }
+
+
+def _fsync_dir(path: Path) -> None:
+    """Make a rename in ``path`` durable (POSIX; a no-op where unsupported)."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _time(body: dict[str, Any], key: str) -> datetime:
@@ -305,6 +377,12 @@ def make_handler(service: DeviceService) -> type[BaseHTTPRequestHandler]:
             except DeviceError as exc:
                 payload = {"error": exc.code, "message": str(exc)}
                 status = ERROR_STATUS.get(exc.code, HTTPStatus.CONFLICT)
+            except Exception as exc:  # always answer; never drop the client
+                # Without this, an unexpected error closes the connection with no
+                # reply, which a client must treat as "may have acted". A 500 says
+                # the request failed; the device's own state is unchanged or saved.
+                payload = {"error": "internal_error", "message": type(exc).__name__}
+                status = HTTPStatus.INTERNAL_SERVER_ERROR
             data = json.dumps(payload).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
